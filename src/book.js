@@ -523,7 +523,6 @@ Keep each page small enough to fit on one A4 sheet.`;
           }
           current = render();
           form.innerHTML = current.html;
-          form.querySelectorAll("[data-close]").forEach((x) => x.addEventListener("click", () => form.closest("dialog").close()));
         });
       },
     });

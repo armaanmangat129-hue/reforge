@@ -184,16 +184,27 @@ const R = (() => {
       sheet.classList.toggle("sheet-wide", !!wide);
       sheet.innerHTML = `<form method="dialog" novalidate>${html}</form>`;
       const form = sheet.querySelector("form");
-      let result = null;
-      form.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", () => sheet.close()));
+      let done = false;
+      // Settle straight away on Save/Cancel: browsers can hold back the dialog's
+      // "close" event while the tab is in the background.
+      const finish = (value) => {
+        if (done) return;
+        done = true;
+        if (sheet.open) sheet.close();
+        resolve(value);
+      };
+      form.addEventListener("click", (e) => {
+        if (e.target.closest("[data-close]")) finish(null);
+      });
       form.addEventListener("submit", (e) => {
         e.preventDefault();
         if (!form.reportValidity()) return;
-        result = new FormData(form);
+        const result = new FormData(form);
         result.submitter = e.submitter ? e.submitter.value : "";
-        sheet.close();
+        finish(result);
       });
-      sheet.addEventListener("close", () => resolve(result), { once: true });
+      // Escape key or other ways the dialog closes
+      sheet.addEventListener("close", () => finish(null), { once: true });
       sheet.showModal();
       if (onOpen) onOpen(form, sheet);
     });
