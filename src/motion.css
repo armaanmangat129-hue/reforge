@@ -1,0 +1,69 @@
+/* Motion Effects, adapted for Reforge.
+   Opacity and transform only. Never changes layout, size or colour.
+   Requires motion.js, which adds "js-motion" to <html>. */
+
+/* Scroll reveal: elements marked .reveal fade and rise into place */
+.js-motion .reveal {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+}
+.js-motion .reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+/* Hover lift on cards */
+.subject-card {
+  transition: transform 0.25s ease-out, box-shadow 0.25s ease-out;
+}
+.subject-card:hover {
+  transform: translateY(-3px);
+}
+
+/* Buttons: a small press response */
+.btn {
+  transition: transform 0.15s ease-out, background-color 0.2s ease-out, color 0.2s ease-out, border-color 0.2s ease-out;
+}
+.btn:hover {
+  transform: translateY(-1px);
+}
+.btn:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* Screen change: a gentle entrance for the page header */
+.js-motion .page-head {
+  animation: motion-rise 0.5s ease-out both;
+}
+
+/* Dialog entrance */
+.sheet[open] {
+  animation: motion-rise 0.28s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@keyframes motion-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Respect users who've asked for less motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .js-motion .reveal,
+  .js-motion .reveal.is-visible,
+  .js-motion .page-head {
+    opacity: 1;
+    transform: none;
+    animation: none;
+  }
+  .subject-card:hover,
+  .btn:hover,
+  .btn:active {
+    transform: none;
+  }
+}

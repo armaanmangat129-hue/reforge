@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Reforge — turn your notes into revision</title>
+  <meta name="description" content="Paste your class notes and Reforge turns them into clean notes, flashcards, quizzes and a maths reference book. Free, private, and saved in your browser.">
+  <meta name="theme-color" content="#f6f2e9">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Reforge — turn your notes into revision">
+  <meta property="og:description" content="Paste your class notes and get clean notes, flashcards, quizzes and a maths reference book. Free and private.">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Inter:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="motion.css">
+</head>
+<body>
+  <a class="skip-link" href="#view">Skip to content</a>
+
+  <div class="app">
+    <aside class="sidebar" aria-label="Main">
+      <a class="brand" href="#/library" aria-label="Reforge home">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="1" y="1" width="30" height="30" rx="9"/><path d="M11 23V9h6.2a4.3 4.3 0 0 1 0 8.6H11m6.2 0L22 23"/></svg>
+        <span class="brand-name">Reforge</span>
+      </a>
+      <nav class="nav" data-nav></nav>
+      <div class="sidebar-foot">
+        <span class="progress-badge" data-progress hidden></span>
+        <p>Everything is saved in this browser.</p>
+      </div>
+    </aside>
+
+    <header class="topbar">
+      <a class="brand" href="#/library" aria-label="Reforge home">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="1" y="1" width="30" height="30" rx="9"/><path d="M11 23V9h6.2a4.3 4.3 0 0 1 0 8.6H11m6.2 0L22 23"/></svg>
+        <span class="brand-name">Reforge</span>
+      </a>
+      <span class="progress-badge" data-progress hidden></span>
+    </header>
+
+    <main id="view" class="view" tabindex="-1"></main>
+
+    <nav class="tabbar" aria-label="Main" data-nav></nav>
+  </div>
+
+  <dialog class="sheet" id="sheet" aria-labelledby="sheet-title"></dialog>
+  <div class="toast-region" role="status" aria-live="polite"></div>
+
+  <script src="motion.js"></script>
+  <script src="core.js"></script>
+  <script src="db.js"></script>
+  <script src="gemini.js"></script>
+  <script src="srs.js"></script>
+  <script src="ai.js"></script>
+  <script src="diagrams.js"></script>
+  <script src="upload.js"></script>
+  <script src="library.js"></script>
+  <script src="study.js"></script>
+  <script src="tutor.js"></script>
+  <script src="planner.js"></script>
+  <script src="settings.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
