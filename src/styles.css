@@ -1111,3 +1111,11 @@ html.printing .d-shape, html.printing .d-box { fill: #f2f2f2; stroke: #000; }
   @page { size: A4; margin: 0; }
   .book-sheet { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* Netlify adds a "Powered by Netlify" badge to free-plan sites, fixed to the bottom
+   right. On phones, lift it above the tab bar so it doesn't cover Tutor/Planner/Settings. */
+@media (max-width: 899px) {
+  #nl-badge-frame { bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom)) !important; }
+  body:has(#nl-badge-frame) .toast-region { bottom: calc(var(--tabbar-h) + 64px + env(safe-area-inset-bottom)); }
+  body:has(#nl-badge-frame) .view { padding-bottom: calc(var(--tabbar-h) + 64px + var(--space-7) + env(safe-area-inset-bottom)); }
+}
