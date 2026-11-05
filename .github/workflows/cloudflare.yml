@@ -1,0 +1,36 @@
+name: Deploy to Cloudflare Pages
+
+# Every push to main publishes src/ to the reforge-study Pages project.
+# Needs the CLOUDFLARE_API_TOKEN repo secret (Account > Cloudflare Pages > Edit).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: cloudflare-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 7d073f1515c3557171248230f8cca1d2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skip until the API token secret is added
+        if: env.CLOUDFLARE_API_TOKEN == ''
+        run: echo "::notice::Add the CLOUDFLARE_API_TOKEN secret to deploy to Cloudflare Pages."
+      - uses: actions/setup-node@v4
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        with:
+          node-version: 22
+      - name: Deploy src/ to reforge-study
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        run: npx --yes wrangler@4 pages deploy src --project-name reforge-study --branch main --commit-hash "$GITHUB_SHA" --commit-message "$(git log -1 --pretty=%s)"
