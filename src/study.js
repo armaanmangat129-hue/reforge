@@ -281,7 +281,7 @@ const Study = (() => {
         subjectId = id;
         const notes = (await DB.listNotes(id)).filter((n) => (n.rawText || "").trim());
         if (!notes.length) throw new Error("Add notes to this subject first.");
-        if (!Gemini.getKey()) throw new Error("Fresh quizzes use Gemini. Add your key in Settings.");
+        if (!AI.getKey()) throw new Error("Fresh quizzes use the AI. Add your Groq key in Settings.");
         questions = await AI.freshQuiz(subject, notes);
       }
     }
@@ -437,7 +437,7 @@ const Study = (() => {
     async function mark(answer) {
       const q = questions[i];
       if (!answer) return toast("Write an answer first, or show the model answer");
-      if (!Gemini.getKey()) return toast("Add your Gemini key in Settings to mark answers");
+      if (!AI.getKey()) return toast("Add your Groq key in Settings to mark answers");
       const btn = slot.querySelector("[data-mark]");
       btn.disabled = true;
       slot.querySelector("[data-skip]").disabled = true;

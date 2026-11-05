@@ -308,8 +308,8 @@ const Library = (() => {
 
   /* ---------- Note ---------- */
 
-  function startGenerate(noteId, only) {
-    AI.generate(noteId, only)
+  function startGenerate(noteId, only, fresh = false) {
+    AI.generate(noteId, only, { fresh })
       .then((note) => {
         const failed = Object.values(note.status || {}).filter((s) => s.state === "error").length;
         if (failed) toast(failed === 1 ? "One part didn't finish. Press Retry on it." : `${failed} parts didn't finish. Press Retry on them.`);
@@ -332,7 +332,7 @@ const Library = (() => {
     const status = note.status || {};
     const anyStatus = steps.some((st) => status[st.id]);
     const running = AI.isRunning(note.id);
-    const hasKey = !!Gemini.getKey();
+    const hasKey = !!AI.getKey();
 
     if (!anyStatus && !running) {
       return `<section class="card gen-panel gen-intro">
@@ -342,7 +342,7 @@ const Library = (() => {
         </div>
         ${hasKey
           ? `<button class="btn btn-primary" type="button" data-action="generate">${icon("spark")}Generate</button>`
-          : `<a class="btn btn-primary" href="#/settings">Add your Gemini key</a>`}
+          : `<a class="btn btn-primary" href="#/settings">Add your Groq key</a>`}
       </section>`;
     }
 
@@ -351,6 +351,7 @@ const Library = (() => {
         const s = status[st.id] || { state: "idle" };
         const pct = s.state === "done" ? 100 : s.state === "working" ? Math.round(((s.part || 0) + 0.5) / (s.parts || 1) * 100) : 0;
         const label =
+          s.message && s.state === "working" ? s.message :
           s.state === "done" ? "Done" :
           s.state === "working" ? (s.parts > 1 ? `Part ${s.part + 1} of ${s.parts}` : "Writing…") :
           s.state === "queued" ? "Waiting" :
@@ -432,7 +433,7 @@ const Library = (() => {
         if (!e) return pending();
         const marks = e.questions.reduce((a, q) => a + q.marks, 0);
         return `<div class="card panel launch">
-            <div><h2>${plural(e.questions.length, "question")} · ${marks} marks</h2><p>Type your answers. Gemini marks each one against the model answer.</p></div>
+            <div><h2>${plural(e.questions.length, "question")} · ${marks} marks</h2><p>Type your answers. The AI marks each one against the model answer.</p></div>
             <a class="btn btn-primary" href="#/exam/note/${encodeURIComponent(note.id)}">Start practice</a>
           </div>
           <ol class="exam-preview">${e.questions.map((q) => `<li><span>${inline(q.question)}</span><span class="marks">${plural(q.marks, "mark")}</span></li>`).join("")}</ol>`;
@@ -553,13 +554,14 @@ const Library = (() => {
       if (!gen && !retry) return;
       await flushSave();
       if (!(note.rawText || "").trim()) return toast("Add some notes first");
-      if (!Gemini.getKey()) return (location.hash = "#/settings");
+      if (!AI.getKey()) return (location.hash = "#/settings");
       if (gen && gen.dataset.action === "regenerate") {
-        const ok = await confirmSheet({ title: "Regenerate the study set?", body: "This replaces the current outputs and the flashcards Gemini made. Cards made from your mistakes are kept.", action: "Regenerate", tone: "primary" });
+        const ok = await confirmSheet({ title: "Regenerate the study set?", body: "This replaces the current outputs and the flashcards the AI made. Cards made from your mistakes are kept.", action: "Regenerate", tone: "primary" });
         if (!ok) return;
       }
       if (tab === "source") { tab = "clean"; drawTabs(); }
-      startGenerate(id, retry ? [retry.dataset.retry] : undefined);
+      // Retry and Regenerate skip the cache; the first Generate may reuse it
+      startGenerate(id, retry ? [retry.dataset.retry] : undefined, !!retry || gen?.dataset.action === "regenerate");
     });
 
     slot.addEventListener("click", async (e) => {
@@ -591,10 +593,11 @@ const Library = (() => {
       const btn = e.currentTarget; // currentTarget is cleared once we await
       await flushSave();
       if (!(note.rawText || "").trim()) return toast("Add some notes first");
-      if (!Gemini.getKey()) return (location.hash = "#/settings");
+      if (!AI.getKey()) return (location.hash = "#/settings");
       btn.disabled = true;
-      btn.innerHTML = '<span class="spinner" aria-hidden="true"></span>Reading your notes…';
-      const saved = await Book.make(id);
+      const setLabel = (msg) => (btn.innerHTML = `<span class="spinner" aria-hidden="true"></span>${R.esc(msg)}`);
+      setLabel("Reading your notes…");
+      const saved = await Book.make(id, setLabel);
       btn.disabled = false;
       btn.innerHTML = `${icon("layers")}Make reference pages`;
       if (saved) location.hash = `#/book/${encodeURIComponent(note.subjectId)}`;

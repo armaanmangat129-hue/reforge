@@ -1,15 +1,16 @@
 /* Reforge service worker: lets the app install and open offline.
    Same-origin files: network first (so updates show straight away), cache as the fallback.
-   Fonts and pdf.js from CDNs: cache first. Gemini calls are never cached here. */
+   Libraries from cdnjs/jsdelivr (pdf.js, mammoth, Tesseract): cache first. AI calls are never cached here. */
 
-const VERSION = "reforge-v6";
+const VERSION = "reforge-v7";
 const SHELL = [
   "./", "styles.css", "motion.css", "manifest.json", "icon.svg",
   "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png", "icons/favicon-32.png",
-  "motion.js", "core.js", "db.js", "gemini.js", "srs.js", "rewards.js", "ai.js", "diagrams.js", "upload.js",
+  "fonts/inter-latin.woff2", "fonts/cormorant-garamond-latin.woff2",
+  "motion.js", "core.js", "db.js", "srs.js", "rewards.js", "ai.js", "diagrams.js", "upload.js",
   "book.js", "library.js", "study.js", "tutor.js", "planner.js", "settings.js", "home.js", "app.js",
 ];
-const CDN = /^https:\/\/(fonts\.googleapis\.com|fonts\.gstatic\.com|cdnjs\.cloudflare\.com)\//;
+const CDN = /^https:\/\/(cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net)\//;
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

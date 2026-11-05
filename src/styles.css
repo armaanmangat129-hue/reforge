@@ -3,6 +3,10 @@
    warm ivory paper, ink-navy text, deep navy actions, antique gold highlights.
    Every colour, size and radius comes from the variables below. */
 
+/* Fonts: self-hosted (Latin), so they load fast and work offline */
+@font-face { font-family: "Inter"; font-style: normal; font-weight: 400 700; font-display: swap; src: url("fonts/inter-latin.woff2") format("woff2"); }
+@font-face { font-family: "Cormorant Garamond"; font-style: normal; font-weight: 500 600; font-display: swap; src: url("fonts/cormorant-garamond-latin.woff2") format("woff2"); }
+
 :root {
   /* Lookbook variables */
   --bg: #f6f2e9;

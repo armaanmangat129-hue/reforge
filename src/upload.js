@@ -1,10 +1,19 @@
-/* Reforge uploads: turn PDFs, photos, Word documents and text files into editable text.
-   PDFs use pdf.js (loaded from cdnjs only when needed). Word files are unzipped with the
-   browser's built-in DecompressionStream. Photos are read by Gemini. */
+/* Reforge uploads: turn PDFs, Word documents, text files and photos into editable text.
+   Nothing here needs the AI:
+   - PDF: pdf.js (cdnjs). Scanned PDFs are rendered to images and read like photos.
+   - Word (.docx): mammoth.js (cdnjs).
+   - Photos: compressed, then read with Tesseract.js (cdnjs) in the browser. If the Groq key
+     has a vision model, that reads them instead (better on handwriting and diagrams), with
+     Tesseract as the fallback.
+   Libraries load only when a file needs them. */
 
 const Upload = (() => {
-  const PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
-  const PDFJS_WORKER = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  const CDN = "https://cdnjs.cloudflare.com/ajax/libs";
+  const PDFJS = `${CDN}/pdf.js/3.11.174/pdf.min.js`;
+  const PDFJS_WORKER = `${CDN}/pdf.js/3.11.174/pdf.worker.min.js`;
+  const MAMMOTH = `${CDN}/mammoth/1.13.0/mammoth.browser.min.js`;
+  const TESSERACT = `${CDN}/tesseract.js/7.0.0/tesseract.min.js`;
+  const TESSERACT_WORKER = `${CDN}/tesseract.js/7.0.0/worker.min.js`;
   const MB = 1024 * 1024;
   const LIMITS = { pdf: 30 * MB, docx: 20 * MB, txt: 5 * MB, image: 15 * MB };
   const MAX_IMAGES = 12;
@@ -25,48 +34,44 @@ const Upload = (() => {
   }
 
   const sizeText = (bytes) => `${Math.round(bytes / MB)} MB`;
-
   function checkSize(file, kind) {
     if (file.size > LIMITS[kind]) {
       throw new UploadError(`${file.name} is ${sizeText(file.size)}. The limit for this kind of file is ${sizeText(LIMITS[kind])}. Split it into smaller files.`);
     }
   }
 
-  /* ---------- PDF ---------- */
-  let pdfjsPromise;
-  function loadPdfJs() {
-    if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
-    pdfjsPromise =
-      pdfjsPromise ||
+  const loaded = {};
+  function loadScript(src, globalName, failMsg) {
+    if (window[globalName]) return Promise.resolve(window[globalName]);
+    loaded[src] =
+      loaded[src] ||
       new Promise((resolve, reject) => {
         const s = document.createElement("script");
-        s.src = PDFJS;
-        s.onload = () => {
-          window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
-          resolve(window.pdfjsLib);
-        };
-        s.onerror = () => reject(new UploadError("Couldn't load the PDF reader. Check your internet connection."));
+        s.src = src;
+        s.onload = () => (window[globalName] ? resolve(window[globalName]) : reject(new UploadError(failMsg)));
+        s.onerror = () => { delete loaded[src]; reject(new UploadError(failMsg)); };
         document.head.appendChild(s);
       });
-    return pdfjsPromise;
+    return loaded[src];
   }
 
+  /* ---------- PDF ---------- */
   async function readPdf(file, onStatus) {
-    const pdfjs = await loadPdfJs();
+    const pdfjs = await loadScript(PDFJS, "pdfjsLib", "Couldn't load the PDF reader. Check your internet connection.");
+    pdfjs.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
     const doc = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise.catch(() => {
       throw new UploadError(`${file.name} couldn't be opened. It may be damaged or password-protected.`);
     });
     const pages = [];
     for (let i = 1; i <= doc.numPages; i++) {
       onStatus(`Reading page ${i} of ${doc.numPages}…`);
-      const page = await doc.getPage(i);
-      const content = await page.getTextContent();
-      // rebuild lines from text positions
-      let lastY = null, line = "", lines = [];
+      const content = await (await doc.getPage(i)).getTextContent();
+      let lastY = null, line = "";
+      const lines = [];
       content.items.forEach((it) => {
         const y = Math.round(it.transform[5]);
         if (lastY !== null && Math.abs(y - lastY) > 2) { lines.push(line.trimEnd()); line = ""; }
-        line += it.str + (it.hasEOL ? "" : "");
+        line += it.str;
         lastY = y;
       });
       if (line) lines.push(line.trimEnd());
@@ -75,8 +80,7 @@ const Upload = (() => {
     const text = pages.join("\n\n").trim();
     if (text.replace(/\s/g, "").length > doc.numPages * 40) return text;
 
-    // Little or no text: it's probably a scan. Render pages and read them with Gemini.
-    if (!Gemini.getKey()) throw new UploadError(`${file.name} is a scanned PDF. Add your Gemini key in Settings so Reforge can read it.`);
+    // Little or no text: it's a scan. Render the pages and read them like photos.
     const count = Math.min(doc.numPages, MAX_SCAN_PAGES);
     const images = [];
     for (let i = 1; i <= count; i++) {
@@ -87,80 +91,52 @@ const Upload = (() => {
       canvas.width = viewport.width;
       canvas.height = viewport.height;
       await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
-      images.push(canvasToImage(canvas));
+      images.push(canvasToImage(shrink(canvas, 1800)));
     }
-    onStatus("Reading the scanned pages with Gemini…");
-    const read = await transcribeInBatches(images, onStatus);
+    const read = await readImages(images, onStatus, "scanned page");
     return doc.numPages > count ? `${read}\n\n[Only the first ${count} pages were read. Upload the rest as a separate file.]` : read;
   }
 
-  /* ---------- DOCX (zip) ---------- */
-  async function inflate(bytes) {
-    if (!("DecompressionStream" in window)) throw new UploadError("This browser can't open Word files. Copy and paste the text instead.");
-    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-    return new Uint8Array(await new Response(stream).arrayBuffer());
-  }
-
-  async function unzipEntry(buffer, wanted) {
-    const view = new DataView(buffer);
-    let eocd = -1;
-    for (let i = buffer.byteLength - 22; i >= Math.max(0, buffer.byteLength - 66000); i--) {
-      if (view.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
-    }
-    if (eocd < 0) throw new UploadError("This doesn't look like a Word document.");
-    const entries = view.getUint16(eocd + 10, true);
-    let ptr = view.getUint32(eocd + 16, true);
-    const dec = new TextDecoder();
-    for (let n = 0; n < entries; n++) {
-      if (view.getUint32(ptr, true) !== 0x02014b50) break;
-      const method = view.getUint16(ptr + 10, true);
-      const compSize = view.getUint32(ptr + 20, true);
-      const nameLen = view.getUint16(ptr + 28, true);
-      const extraLen = view.getUint16(ptr + 30, true);
-      const commentLen = view.getUint16(ptr + 32, true);
-      const localOffset = view.getUint32(ptr + 42, true);
-      const name = dec.decode(new Uint8Array(buffer, ptr + 46, nameLen));
-      if (name === wanted) {
-        const lNameLen = view.getUint16(localOffset + 26, true);
-        const lExtraLen = view.getUint16(localOffset + 28, true);
-        const start = localOffset + 30 + lNameLen + lExtraLen;
-        const data = new Uint8Array(buffer, start, compSize);
-        if (method === 0) return dec.decode(data);
-        if (method === 8) return dec.decode(await inflate(data));
-        throw new UploadError("This Word document uses a format Reforge can't read. Copy and paste the text instead.");
-      }
-      ptr += 46 + nameLen + extraLen + commentLen;
-    }
-    throw new UploadError("This doesn't look like a Word document.");
-  }
-
+  /* ---------- Word ---------- */
   async function readDocx(file) {
-    const xml = await unzipEntry(await file.arrayBuffer(), "word/document.xml");
-    const doc = new DOMParser().parseFromString(xml, "application/xml");
-    const paras = [...doc.getElementsByTagName("w:p")];
-    const lines = paras.map((p) => {
-      let text = "";
-      p.querySelectorAll("*").forEach((el) => {
-        if (el.tagName === "w:t") text += el.textContent;
-        else if (el.tagName === "w:tab") text += "\t";
-        else if (el.tagName === "w:br") text += "\n";
-      });
-      const style = p.getElementsByTagName("w:pStyle")[0]?.getAttribute("w:val") || "";
-      if (!text.trim()) return "";
-      if (/^(Heading|Title)/i.test(style)) return `# ${text.trim()}`;
-      if (p.getElementsByTagName("w:numPr").length || /List/i.test(style)) return `- ${text.trim()}`;
-      return text;
+    const mammoth = await loadScript(MAMMOTH, "mammoth", "Couldn't load the Word reader. Check your internet connection.");
+    let result;
+    try {
+      result = await mammoth.convertToHtml({ arrayBuffer: await file.arrayBuffer() });
+    } catch {
+      throw new UploadError(`${file.name} couldn't be opened. Save it again as .docx and retry.`);
+    }
+    // keep headings and lists, drop everything else
+    const doc = new DOMParser().parseFromString(result.value, "text/html");
+    const out = [];
+    doc.body.querySelectorAll("h1, h2, h3, h4, h5, h6, p, li, td").forEach((el) => {
+      if (el.closest("li") && el.tagName !== "LI") return;
+      const t = el.textContent.replace(/\s+/g, " ").trim();
+      if (!t) return;
+      if (/^H\d$/.test(el.tagName)) out.push(`\n# ${t}`);
+      else if (el.tagName === "LI") out.push(`- ${t}`);
+      else out.push(t);
     });
-    return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+    return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
   }
 
-  /* ---------- Images ---------- */
+  /* ---------- Photos ---------- */
+  function shrink(canvas, maxSide) {
+    const scale = Math.min(1, maxSide / Math.max(canvas.width, canvas.height));
+    if (scale === 1) return canvas;
+    const c = document.createElement("canvas");
+    c.width = Math.round(canvas.width * scale);
+    c.height = Math.round(canvas.height * scale);
+    c.getContext("2d").drawImage(canvas, 0, 0, c.width, c.height);
+    return c;
+  }
   function canvasToImage(canvas) {
-    const url = canvas.toDataURL("image/jpeg", 0.85);
+    const url = canvas.toDataURL("image/jpeg", 0.82);
     return { mimeType: "image/jpeg", data: url.split(",")[1] };
   }
 
-  async function imageToJpeg(file, maxSide = 2000) {
+  /* Compresses a photo to a JPEG no bigger than maxSide pixels on its longest edge. */
+  async function imageToJpeg(file, maxSide = 1600) {
     const url = URL.createObjectURL(file);
     try {
       const img = await new Promise((resolve, reject) => {
@@ -183,22 +159,56 @@ const Upload = (() => {
     }
   }
 
-  async function transcribeInBatches(images, onStatus) {
+  /* On-device text recognition (no AI, no key). */
+  let tesseractWorker;
+  async function ocr(images, onStatus = () => {}, label = "photo") {
+    const Tesseract = await loadScript(TESSERACT, "Tesseract", "Couldn't load the text reader. Check your internet connection.");
+    let current = 0;
+    if (!tesseractWorker) {
+      onStatus("Loading the text reader…");
+      tesseractWorker = Tesseract.createWorker("eng", 1, {
+        workerPath: TESSERACT_WORKER,
+        logger: (m) => {
+          if (m.status === "recognizing text") onStatus(`Reading ${label} ${current + 1} of ${images.length}… ${Math.round(m.progress * 100)}%`);
+        },
+      });
+    }
+    const worker = await tesseractWorker;
     const out = [];
-    for (let i = 0; i < images.length; i += 4) {
-      const batch = images.slice(i, i + 4);
-      if (images.length > 4) onStatus(`Reading pages ${i + 1}-${i + batch.length} of ${images.length} with Gemini…`);
-      out.push(await AI.transcribe(batch, () => onStatus("Gemini is busy. Trying again in a few seconds…")));
+    for (let i = 0; i < images.length; i++) {
+      current = i;
+      onStatus(`Reading ${label} ${i + 1} of ${images.length}…`);
+      const { data } = await worker.recognize(`data:${images[i].mimeType};base64,${images[i].data}`);
+      out.push(data.text.trim());
     }
     return out.join("\n\n").trim();
+  }
+
+  /* Groq vision when the key has a vision model, otherwise (or if it fails) Tesseract. */
+  async function readImages(images, onStatus, label = "photo") {
+    if (AI.getKey() && (await AI.visionModel())) {
+      try {
+        const out = [];
+        for (let i = 0; i < images.length; i += 3) {
+          const batch = images.slice(i, i + 3);
+          onStatus(images.length > 1 ? `Reading ${label}s ${i + 1}-${i + batch.length} of ${images.length} with AI vision…` : `Reading your ${label} with AI vision…`);
+          out.push(await AI.transcribe(batch, (msg) => onStatus(msg)));
+        }
+        const text = out.join("\n\n").trim();
+        if (text) return text;
+      } catch (err) {
+        console.warn("Reforge: AI vision failed, using on-device text recognition", err);
+      }
+    }
+    return ocr(images, onStatus, label);
   }
 
   /* ---------- Entry point ---------- */
   /* Returns [{ name, text }] in the order given. onStatus(message) reports progress. */
   async function extract(files, onStatus = () => {}) {
     files = [...files];
-    const images = files.filter((f) => kindOf(f) === "image");
-    if (images.length > MAX_IMAGES) throw new UploadError(`That's ${images.length} photos. Upload up to ${MAX_IMAGES} at a time.`);
+    const photos = files.filter((f) => kindOf(f) === "image");
+    if (photos.length > MAX_IMAGES) throw new UploadError(`That's ${photos.length} photos. Upload up to ${MAX_IMAGES} at a time.`);
     const results = [];
 
     for (const file of files) {
@@ -213,19 +223,18 @@ const Upload = (() => {
       results.push({ name: file.name, text: text.trim() });
     }
 
-    if (images.length) {
-      if (!Gemini.getKey()) throw new UploadError("Reading photos uses Gemini. Add your key in Settings first.");
+    if (photos.length) {
       const prepared = [];
-      for (const [i, f] of images.entries()) {
-        onStatus(`Preparing photo ${i + 1} of ${images.length}…`);
+      for (const [i, f] of photos.entries()) {
+        onStatus(`Compressing photo ${i + 1} of ${photos.length}…`);
         prepared.push(await imageToJpeg(f));
       }
-      onStatus(images.length === 1 ? "Reading your photo with Gemini…" : "Reading your photos with Gemini…");
-      const text = await transcribeInBatches(prepared, onStatus);
-      results.push({ name: images.map((f) => f.name).join(", "), text });
+      const text = await readImages(prepared, onStatus);
+      if (!text.trim()) throw new UploadError("No text was found in those photos. Try a clearer, closer photo.");
+      results.push({ name: photos.map((f) => f.name).join(", "), text });
     }
     return results;
   }
 
-  return { extract, imageToJpeg, ACCEPT, UploadError, kindOf };
+  return { extract, imageToJpeg, ocr, ACCEPT, UploadError, kindOf };
 })();

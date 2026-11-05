@@ -110,7 +110,7 @@ const Tutor = (() => {
     async function send(text) {
       if (sending) return;
       if (!text && !image) return;
-      if (!Gemini.getKey()) { toast("Add your Gemini key in Settings first"); return; }
+      if (!AI.getKey()) { toast("Add your Groq key in Settings first"); return; }
       const scope = chosenNotes();
       if (!scope.length) { toast("Pick at least one note"); return; }
       sending = true;

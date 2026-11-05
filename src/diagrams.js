@@ -1,5 +1,5 @@
 /* Reforge diagrams: draws reference-sheet diagrams as inline SVG from a small spec.
-   Gemini never writes SVG itself; it picks a kind and gives numbers and labels,
+   The AI never writes SVG itself; it picks a kind and gives numbers and labels,
    and expressions are parsed by a tiny safe evaluator (no eval). */
 
 const Diagrams = (() => {

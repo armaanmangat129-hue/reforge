@@ -1,5 +1,5 @@
 /* Reforge Reference Book: one book per subject, one A4 page per topic.
-   - make(noteId): Gemini splits the note into topics (chunked for long notes), the app merges
+   - make(noteId): the AI splits the note into topics (chunked for long notes), the app merges
      them with existing pages by topic, and you review the changes before anything is saved.
    - Pages are structured JSON (see db.js) and drawn as A4 sheets. A page that runs past one
      sheet is split into Part 1 and Part 2 by measuring it.
@@ -9,7 +9,7 @@
 const Book = (() => {
   const { esc, icon, plural, toast, openSheet, confirmSheet, emptyState, inline, view } = R;
 
-  /* ---------- Schema ---------- */
+  /* ---------- Schema (described to the model as an example JSON shape) ---------- */
   const STR = { type: "STRING" };
   const NUM = { type: "NUMBER" };
   const INT = { type: "INTEGER" };
@@ -185,7 +185,7 @@ Keep each page small enough to fit on one A4 sheet.`;
       missing: list(p.missing).map(s).filter(Boolean).slice(0, 4),
       extras: cleanExtras(kind, p.extras),
     };
-    // History: draw the timeline from the extras when Gemini didn't pick a diagram
+    // History: draw the timeline from the extras when the AI didn't pick a diagram
     if (kind === "history" && page.diagram.kind === "none" && page.extras.timeline?.length >= 2) {
       page.diagram = { ...cleanDiagram({ kind: "timeline", caption: "Timeline" }), items: page.extras.timeline.map((t) => ({ label: t.date, detail: t.event })) };
     }
@@ -405,9 +405,11 @@ Keep each page small enough to fit on one A4 sheet.`;
   }
 
   /* ---------- Making pages from a note ---------- */
-  async function runChunk(kind, note, chunkText, part, parts, existingTitles) {
+  async function runChunk(kind, note, chunkText, part, parts, existingTitles, { fresh = false, onStatus } = {}) {
     const title = parts > 1 ? `${note.title} (part ${part + 1} of ${parts})` : note.title;
-    return Gemini.json({
+    return AI.json({
+      fresh,
+      onStatus,
       system: SYSTEM,
       prompt: makePrompt(kind, title, chunkText, existingTitles),
       schema: pageSchema(kind),
@@ -431,7 +433,7 @@ Keep each page small enough to fit on one A4 sheet.`;
     for (let i = 0; i < chunks.length; i++) {
       onStatus(chunks.length > 1 ? `Reading part ${i + 1} of ${chunks.length}…` : "Reading your notes…");
       try {
-        results.push(...(await runChunk(kind, note, chunks[i], i, chunks.length, existingTitles)).pages);
+        results.push(...(await runChunk(kind, note, chunks[i], i, chunks.length, existingTitles, { onStatus })).pages);
       } catch (err) {
         failures.push({ index: i, error: err.message });
       }
@@ -462,12 +464,10 @@ Keep each page small enough to fit on one A4 sheet.`;
     return changes;
   }
 
-  async function make(noteId) {
-    const status = { el: null };
-    toast("Making reference pages…");
+  async function make(noteId, onStatus = () => {}) {
     let proposal;
     try {
-      proposal = await propose(noteId, (m) => status.el && (status.el.textContent = m));
+      proposal = await propose(noteId, onStatus);
     } catch (err) {
       toast(err.message);
       return;
@@ -515,7 +515,10 @@ Keep each page small enough to fit on one A4 sheet.`;
           b.disabled = true;
           b.innerHTML = '<span class="spinner" aria-hidden="true"></span>Retrying';
           try {
-            const res = await runChunk(proposal.kind, proposal.note, proposal.chunks[i], i, proposal.chunks.length, proposal.existing.map((p) => p.title));
+            const res = await runChunk(proposal.kind, proposal.note, proposal.chunks[i], i, proposal.chunks.length, proposal.existing.map((p) => p.title), {
+              fresh: true,
+              onStatus: (m) => (b.innerHTML = `<span class="spinner" aria-hidden="true"></span>${esc(m)}`),
+            });
             proposal.results.push(...res.pages);
             proposal.failures = proposal.failures.filter((f) => f.index !== i);
           } catch (err) {
@@ -567,13 +570,13 @@ Keep each page small enough to fit on one A4 sheet.`;
     }
     await setStatus({ state: "working" });
     try {
-      const text = notes.map((n) => `=== ${n.title} ===\n${n.rawText}`).join("\n\n").slice(0, 60000);
-      const res = await Gemini.json({
+      const text = notes.map((n) => `=== ${n.title} ===\n${n.rawText}`).join("\n\n").slice(0, AI.contextChars());
+      const res = await AI.json({
         system: SYSTEM,
         prompt: makePrompt(kind, notes.map((n) => n.title).join(", "), text, [], page.title),
         schema: pageSchema(kind),
         validate: validate(kind),
-        cache: false,
+        fresh: true,
         temperature: 0.5,
       });
       const fresh = res.pages[0];
@@ -753,7 +756,7 @@ Keep each page small enough to fit on one A4 sheet.`;
         return rerender();
       }
       if (e.target.closest("[data-regen]")) {
-        if (!Gemini.getKey()) return toast("Add your Gemini key in Settings first");
+        if (!AI.getKey()) return toast("Add your Groq key in Settings first");
         const btn = e.target.closest("[data-regen]");
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner" aria-hidden="true"></span>Working';

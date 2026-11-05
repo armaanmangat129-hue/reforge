@@ -1,28 +1,26 @@
-/* Reforge Settings: Gemini key, model, and your data. */
+/* Reforge Settings: Groq key, model, goals and sounds, and your data. */
 
 (() => {
   const { esc, icon, toast, confirmSheet, view } = R;
 
   async function renderSettings() {
-    const key = Gemini.getKey();
-    const model = Gemini.getModel();
+    const key = AI.getKey();
     const [subjects, notes, cards, rewardSettings] = await Promise.all([DB.listSubjects(), DB.listNotes(), DB.all("cards"), Rewards.getSettings()]);
     return `
       <div class="page-head"><div><span class="eyebrow">Preferences</span><h1>Settings</h1></div></div>
 
       <section class="card panel reveal" aria-labelledby="key-heading">
         <div class="panel-head">
-          <h2 id="key-heading">Gemini API key</h2>
-          <p>Reforge uses Google's Gemini to write your study material. The free tier is enough for daily study.
-          Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>, then paste it here.</p>
+          <h2 id="key-heading">Groq API key</h2>
+          <p>Reforge uses Groq to write your study material. Groq's free tier is enough for daily study.</p>
         </div>
         <div class="field">
           <label class="label" for="api-key">Your key</label>
           <div class="input-row">
-            <input class="input" id="api-key" type="password" value="${esc(key)}" placeholder="Paste your key" autocomplete="off" spellcheck="false">
+            <input class="input" id="api-key" type="password" value="${esc(key)}" placeholder="Paste your Groq key" autocomplete="off" spellcheck="false">
             <button class="btn btn-icon" type="button" data-action="toggle-key" aria-label="Show key" aria-pressed="false">${icon("eye")}</button>
           </div>
-          <span class="hint">Saved only in this browser and sent only to Google. Everyone who uses Reforge needs their own free key.</span>
+          <span class="hint">Get a free key at <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a>. It's saved only in this browser and sent only to Groq.</span>
         </div>
         <div class="key-actions">
           <button class="btn btn-primary" type="button" data-action="save-key">Save key</button>
@@ -35,15 +33,16 @@
       <section class="card panel reveal" aria-labelledby="model-heading">
         <div class="panel-head">
           <h2 id="model-heading">Model</h2>
-          <p>Used for clean notes, reference sheets, marking and the tutor. Flashcards, summaries and quizzes always use Flash-Lite to save your quota.</p>
+          <p>Every AI feature uses this model. The list comes from Groq with your key. The largest text model is picked for you.</p>
         </div>
-        <fieldset class="model-options">
-          <legend class="visually-hidden">Gemini model</legend>
-          ${Gemini.MODELS.map(
-            (m) => `<label class="radio-card"><input type="radio" name="model" value="${m.id}" ${m.id === model ? "checked" : ""}>
-              <div><strong>${esc(m.label)}</strong><span>${esc(m.note)}</span></div></label>`
-          ).join("")}
-        </fieldset>
+        <div class="field">
+          <label class="label" for="model-select">Model</label>
+          <div class="input-row">
+            <select class="select" id="model-select" ${key ? "" : "disabled"}><option>${key ? "Loading models…" : "Add your key first"}</option></select>
+            <button class="btn btn-icon" type="button" data-action="refresh-models" aria-label="Refresh the model list" ${key ? "" : "disabled"}>${icon("refresh")}</button>
+          </div>
+          <span class="hint" id="vision-hint"></span>
+        </div>
       </section>
 
       <section class="card panel reveal" aria-labelledby="rewards-heading">
@@ -101,16 +100,44 @@
       toggle.setAttribute("aria-label", show ? "Hide key" : "Show key");
     });
 
+    const select = view.querySelector("#model-select");
+    const visionHint = view.querySelector("#vision-hint");
+    async function fillModels(force = false) {
+      if (!AI.getKey()) return;
+      select.disabled = true;
+      try {
+        const models = await AI.listModels({ force });
+        const current = await AI.currentModel();
+        const def = AI.pickDefault(models);
+        select.innerHTML = models
+          .map((m) => `<option value="${esc(m.id)}" ${m.id === current ? "selected" : ""}>${esc(m.id)}${m.id === def ? " (recommended)" : ""}${m.vision ? " · reads photos" : ""}</option>`)
+          .join("");
+        const vision = AI.pickVision(models);
+        visionHint.textContent = vision
+          ? `Photos are read with ${vision}, with on-device text recognition as a backup.`
+          : "No vision model on your key, so photos are read with on-device text recognition.";
+        select.disabled = false;
+      } catch (err) {
+        select.innerHTML = `<option>${esc(err.message)}</option>`;
+      }
+    }
+    select.addEventListener("change", () => {
+      AI.setModel(select.value);
+      toast("Model updated");
+    });
+    view.querySelector('[data-action="refresh-models"]').addEventListener("click", () => fillModels(true));
+    fillModels();
+
     view.querySelector('[data-action="save-key"]').addEventListener("click", () => {
       const value = input.value.trim();
       if (!value) return setStatus("error", "Paste your key first.");
-      Gemini.setKey(value);
+      AI.setKey(value);
       toast("Key saved");
       R.render();
     });
 
     view.querySelector('[data-action="remove-key"]')?.addEventListener("click", () => {
-      Gemini.setKey("");
+      AI.setKey("");
       toast("Key removed");
       R.render();
     });
@@ -120,24 +147,16 @@
       const value = input.value.trim();
       if (!value) return setStatus("error", "Paste your key first.");
       testBtn.disabled = true;
-      setStatus("busy", "Checking your key with Gemini…");
+      setStatus("busy", "Checking your key with Groq…");
       try {
-        await Gemini.testKey(value, Gemini.getModel(), () => setStatus("busy", "Gemini is busy. Trying again in a few seconds…"));
-        setStatus("ok", `Your key works with ${Gemini.MODELS.find((m) => m.id === Gemini.getModel())?.label || Gemini.getModel()}.${Gemini.getKey() === value ? "" : " Press Save key to keep it."}`);
+        const res = await AI.testKey(value, (msg) => setStatus("busy", msg));
+        setStatus("ok", `Your key works. ${res.models.length} models available; ${res.model} is recommended.${AI.getKey() === value ? "" : " Press Save key to keep it."}`);
       } catch (err) {
         setStatus("error", err.message);
       } finally {
         testBtn.disabled = false;
       }
     });
-
-    view.querySelectorAll('input[name="model"]').forEach((r) =>
-      r.addEventListener("change", () => {
-        Gemini.setModel(r.value);
-        status.hidden = true;
-        toast("Model updated");
-      })
-    );
 
     const goal = view.querySelector("#daily-goal");
     goal.addEventListener("change", async () => {
