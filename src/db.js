@@ -1,17 +1,19 @@
 /* Reforge storage: IndexedDB wrapper.
-   subjects { id, name, color, isMaths, createdAt }
+   subjects { id, name, color, kind, createdAt }   kind: maths | science | english | history | other
    notes    { id, subjectId, title, rawText, outputs, status, createdAt, updatedAt }
    cards    { id, subjectId, noteId, front, back, source, ef, interval, reps, due, createdAt }
    attempts { id, subjectId, noteId, kind, score, total, wrong[], at }
    chats    { subjectId, messages[] }
    exams    { id, subjectId, name, date }
    tasks    { id, examId, subjectId, day, kind, label, link, done }
+   pages    { id, subjectId, order, title, part, keyIdeas[], diagram, diagramSvg, terms[], example, examTip,
+              extras, missing[], sourceNoteIds[], status, updatedAt }   (reference book)
    meta     { key, value }   (progress, settings)
    cache    { key, value, at } (AI responses) */
 
 const DB = (() => {
   const NAME = "reforge";
-  const VERSION = 2;
+  const VERSION = 3;
   let dbPromise;
 
   function open() {
@@ -34,6 +36,7 @@ const DB = (() => {
         make("tasks", "id", ["examId"]);
         make("meta", "key");
         make("cache", "key");
+        make("pages", "id", ["subjectId"]);
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -117,7 +120,7 @@ const DB = (() => {
     async deleteSubject(id) {
       const exams = await all("exams", "subjectId", id);
       for (const e of exams) await deleteWhere(["tasks"], "examId", e.id);
-      await deleteWhere(["notes", "cards", "attempts", "exams"], "subjectId", id);
+      await deleteWhere(["notes", "cards", "attempts", "exams", "pages"], "subjectId", id);
       await del("chats", id);
       await del("subjects", id);
     },
@@ -155,13 +158,13 @@ const DB = (() => {
     setMeta: (key, value) => put("meta", { key, value }),
 
     async exportAll() {
-      const names = ["subjects", "notes", "cards", "attempts", "chats", "exams", "tasks", "meta"];
+      const names = ["subjects", "notes", "cards", "attempts", "chats", "exams", "tasks", "meta", "pages"];
       const out = { app: "reforge", version: VERSION, exportedAt: new Date().toISOString() };
       for (const n of names) out[n] = await all(n);
       return out;
     },
     async importAll(data) {
-      const names = ["subjects", "notes", "cards", "attempts", "chats", "exams", "tasks", "meta"];
+      const names = ["subjects", "notes", "cards", "attempts", "chats", "exams", "tasks", "meta", "pages"];
       const db = await open();
       const tx = db.transaction(names, "readwrite");
       names.forEach((n) => (Array.isArray(data[n]) ? data[n] : []).forEach((row) => tx.objectStore(n).put(row)));

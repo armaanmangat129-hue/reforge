@@ -14,13 +14,11 @@ const AI = (() => {
 
   /* ---------- Schema helpers (Gemini OpenAPI subset) ---------- */
   const STR = { type: "STRING" };
-  const NUM = { type: "NUMBER" };
   const INT = { type: "INTEGER" };
   const BOOL = { type: "BOOLEAN" };
   const arr = (items) => ({ type: "ARRAY", items });
   const obj = (properties, required = Object.keys(properties)) => ({ type: "OBJECT", properties, required });
 
-  const DIAGRAM_KINDS = ["graph", "right_triangle", "triangle", "circle", "number_line", "none"];
 
   const SCHEMAS = {
     clean: obj(
@@ -35,33 +33,6 @@ const AI = (() => {
     flashcards: obj({ cards: arr(obj({ front: STR, back: STR })) }),
     quiz: obj({ questions: arr(obj({ question: STR, options: arr(STR), answerIndex: INT, explanation: STR, topic: STR })) }),
     exam: obj({ questions: arr(obj({ question: STR, marks: INT, modelAnswer: STR, topic: STR })) }),
-    reference: obj({
-      topics: arr(
-        obj(
-          {
-            title: STR,
-            diagram: obj(
-              {
-                kind: { type: "STRING", enum: DIAGRAM_KINDS },
-                caption: STR,
-                expressions: arr(STR),
-                xMin: NUM,
-                xMax: NUM,
-                yMin: NUM,
-                yMax: NUM,
-                points: arr(obj({ x: NUM, y: NUM, label: STR }, ["x", "label"])),
-                labels: arr(STR),
-              },
-              ["kind", "caption"]
-            ),
-            steps: arr(STR),
-            example: obj({ problem: STR, working: arr(STR), answer: STR }),
-            cas: arr(obj({ step: STR, keys: STR })),
-          },
-          ["title", "diagram", "steps", "example", "cas"]
-        )
-      ),
-    }),
     mark: obj({ score: INT, missing: STR, good: STR }),
     tutor: obj({ inNotes: BOOL, answer: STR, sources: arr(STR) }),
   };
@@ -114,30 +85,6 @@ const AI = (() => {
         .filter((q) => q.question && q.modelAnswer);
       need(questions.length >= 2, "too few questions");
       return { questions };
-    },
-    reference(v) {
-      const num = (x) => (typeof x === "number" && isFinite(x) ? x : undefined);
-      const topics = list(v.topics)
-        .map((t) => {
-          const d = t.diagram || {};
-          return {
-            title: s(t.title),
-            diagram: {
-              kind: DIAGRAM_KINDS.includes(d.kind) ? d.kind : "none",
-              caption: s(d.caption),
-              expressions: list(d.expressions).map(s).filter(Boolean).slice(0, 3),
-              xMin: num(d.xMin), xMax: num(d.xMax), yMin: num(d.yMin), yMax: num(d.yMax),
-              points: list(d.points).filter((p) => num(p.x) !== undefined).map((p) => ({ x: p.x, y: num(p.y), label: s(p.label) })).slice(0, 8),
-              labels: list(d.labels).map(s).slice(0, 6),
-            },
-            steps: list(t.steps).map(s).filter(Boolean).slice(0, 6),
-            example: { problem: s(t.example?.problem), working: list(t.example?.working).map(s).filter(Boolean), answer: s(t.example?.answer) },
-            cas: list(t.cas).map((c) => ({ step: s(c.step), keys: s(c.keys) })).filter((c) => c.keys),
-          };
-        })
-        .filter((t) => t.title && t.steps.length);
-      need(topics.length, "no topics");
-      return { topics };
     },
     mark(max) {
       return (v) => {
@@ -198,25 +145,6 @@ Write ${count} exam-style short-answer questions on these notes, like a school a
 - modelAnswer: a full-mark answer using only the notes. For multi-mark questions, make each marking point clear.
 - topic: 1-4 words naming the topic.`,
 
-    reference: ({ title, text }) =>
-      `${notesBlock(title, text)}
-
-Make a maths reference sheet for each distinct topic or method in these notes (at most 8 topics).
-For each topic:
-- title: the topic name.
-- diagram: a simple diagram that a student could copy by hand. Choose kind:
-  - "graph": expressions are functions of x in plain text using x, numbers, + - * / ^, sqrt(), sin(), cos(), tan(), ln(), log(), abs(), exp(), pi. Example "-(x-1)^2+4". Give xMin and xMax, and yMin/yMax if helpful. points are the key points with real numbers, labelled like "(3, 0)" or "turning point (1, 4)".
-  - "right_triangle": labels = [vertical side, horizontal side, hypotenuse, angle at the bottom-left], e.g. ["a = 3", "b = 4", "c = 5", "θ"].
-  - "triangle": labels = [side a, side b, side c, angle A, angle B, angle C].
-  - "circle": labels = [radius label, centre label].
-  - "number_line": points on the line with labels, xMin and xMax.
-  - "none" if no diagram helps.
-  caption: one short line describing the diagram.
-- steps: "How to solve" in 3-5 short steps. No paragraphs.
-- example: one worked example with real numbers. Use a method that is in the notes. working is the lines of working, answer is the final answer.
-- cas: the easiest TI-Nspire CX CAS keystrokes for this kind of problem, as short steps, e.g. {"step": "Solve", "keys": "menu 3 1 → solve(0=-3x+10,x) → enter"}.
-  If you are not completely sure of a keystroke or menu number, write "check on calculator" in keys instead of guessing.`,
-
     condense: ({ points }) =>
       `These summary points come from different parts of the same notes:\n${points.map((p) => "- " + p).join("\n")}\n\nCombine them into at most 5 bullet points. Don't add anything new.`,
   };
@@ -257,9 +185,8 @@ For each topic:
     { id: "flashcards", label: "Flashcards" },
     { id: "quiz", label: "Quiz" },
     { id: "exam", label: "Exam questions" },
-    { id: "reference", label: "Reference sheet", maths: true },
   ];
-  const stepsFor = (subject) => STEPS.filter((st) => !st.maths || R.isMaths(subject));
+  const stepsFor = () => STEPS; // reference pages are made separately (book.js)
 
   // flashcards and quizzes use the lighter model to save quota
   const MODEL_FOR = { summary: Gemini.LITE, flashcards: Gemini.LITE, quiz: Gemini.LITE };
@@ -296,8 +223,6 @@ For each topic:
         return { questions: results.flatMap((r) => r.questions).slice(0, 10) };
       case "exam":
         return { questions: results.flatMap((r) => r.questions).slice(0, 5) };
-      case "reference":
-        return { topics: results.flatMap((r) => r.topics).slice(0, 12) };
     }
   }
 

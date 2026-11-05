@@ -1,17 +1,17 @@
-/* Reforge Library: subjects, notes, the generate pipeline UI, reference sheets and printing. */
+/* Reforge Library: subjects, notes and the generate pipeline UI. The Reference Book lives in book.js. */
 
 const Library = (() => {
-  const { esc, icon, plural, when, subjectVar, isMaths, looksLikeMaths, toast, openSheet, confirmSheet, emptyState, skeleton, inline, view } = R;
+  const { esc, icon, plural, when, subjectVar, toast, openSheet, confirmSheet, emptyState, skeleton, inline, view } = R;
 
   /* ---------- Sheets ---------- */
 
   function subjectSheet(subject) {
     const current = subject ? subject.color : R.SUBJECT_COLORS[0].key;
-    const maths = subject ? isMaths(subject) : false;
+    const kind = subject ? R.subjectKind(subject) : "other";
     return openSheet(
       `<div class="sheet-body">
         <h2 id="sheet-title">${subject ? "Edit subject" : "New subject"}</h2>
-        <p>${subject ? "Change the name, colour or maths mode." : "Group your notes by class, like Maths Methods or Chemistry."}</p>
+        <p>${subject ? "Change the name, colour or reference book style." : "Group your notes by class, like Maths Methods or Chemistry."}</p>
         <div class="field">
           <label class="label" for="subject-name">Name</label>
           <input class="input" id="subject-name" name="name" required maxlength="40" autocomplete="off"
@@ -27,10 +27,14 @@ const Library = (() => {
             ).join("")}
           </fieldset>
         </div>
-        <label class="check-row">
-          <input type="checkbox" name="isMaths" ${maths ? "checked" : ""}>
-          <span><strong>Maths subject</strong><span>Adds reference sheets with diagrams, worked examples and TI-Nspire CAS steps.</span></span>
-        </label>
+        <div class="field">
+          <span class="label" id="kind-label">Reference book style</span>
+          <span class="hint">Picked from the subject name. Change it if it's wrong.</span>
+          <fieldset class="kind-options" aria-labelledby="kind-label">
+            ${R.KINDS.map((k) => `<label class="radio-card"><input type="radio" name="kind" value="${k.id}" ${k.id === kind ? "checked" : ""}>
+              <div><strong>${esc(k.label)}</strong><span>${esc(k.note)}</span></div></label>`).join("")}
+          </fieldset>
+        </div>
       </div>
       <div class="sheet-foot">
         <button class="btn" type="button" data-close>Cancel</button>
@@ -39,10 +43,13 @@ const Library = (() => {
       {
         onOpen: (form) => {
           const name = form.querySelector("#subject-name");
-          const box = form.querySelector('[name="isMaths"]');
           let touched = !!subject;
-          box.addEventListener("change", () => (touched = true));
-          name.addEventListener("input", () => { if (!touched) box.checked = looksLikeMaths(name.value); });
+          form.querySelectorAll('[name="kind"]').forEach((r) => r.addEventListener("change", () => (touched = true)));
+          name.addEventListener("input", () => {
+            if (touched) return;
+            const k = R.detectKind(name.value);
+            form.querySelector(`[name="kind"][value="${k}"]`).checked = true;
+          });
           name.focus();
         },
       }
@@ -205,7 +212,7 @@ const Library = (() => {
   async function createSubject() {
     const data = await subjectSheet();
     if (!data) return;
-    const subject = await DB.saveSubject({ name: data.get("name").trim(), color: data.get("color"), isMaths: data.get("isMaths") === "on" });
+    const subject = await DB.saveSubject({ name: data.get("name").trim(), color: data.get("color"), kind: data.get("kind") });
     toast(`${subject.name} created`);
     location.hash = `#/subject/${encodeURIComponent(subject.id)}`;
   }
@@ -221,12 +228,12 @@ const Library = (() => {
       return;
     }
     const [notes, due] = await Promise.all([DB.listNotes(id), SRS.dueCards(id)]);
-    const hasReference = notes.some((n) => n.outputs?.reference?.topics?.length);
+    const pageCount = Book.groups(await Book.pagesOf(id)).length;
     return `
       <a class="back" href="#/library">${icon("back")}Library</a>
       <div class="page-head">
         <div>
-          <span class="eyebrow">${plural(notes.length, "note")}${isMaths(subject) ? " · Maths mode" : ""}</span>
+          <span class="eyebrow">${plural(notes.length, "note")} · ${esc(R.KINDS.find((k) => k.id === R.subjectKind(subject)).label)} style</span>
           <h1>${esc(subject.name)}</h1>
         </div>
         <div class="head-actions">
@@ -241,7 +248,7 @@ const Library = (() => {
               <a class="quick" href="#/review/subject/${encodeURIComponent(id)}">${icon("study")}<span><strong>${due.length}</strong> cards due</span></a>
               <a class="quick" href="#/quiz/subject/${encodeURIComponent(id)}">${icon("target")}<span>Fresh quiz</span></a>
               <a class="quick" href="#/tutor?subject=${encodeURIComponent(id)}">${icon("tutor")}<span>Ask the tutor</span></a>
-              ${hasReference ? `<a class="quick" href="#/print/${encodeURIComponent(id)}">${icon("print")}<span>Reference book</span></a>` : ""}
+              <a class="quick" href="#/book/${encodeURIComponent(id)}">${icon("layers")}<span>Reference book${pageCount ? ` <strong>${pageCount}</strong>` : ""}</span></a>
             </div>
             <ul class="card note-list reveal">${notes
               .map(
@@ -276,7 +283,8 @@ const Library = (() => {
       const subject = await DB.getSubject(id);
       const data = await subjectSheet(subject);
       if (!data) return;
-      await DB.saveSubject({ ...subject, name: data.get("name").trim(), color: data.get("color"), isMaths: data.get("isMaths") === "on" });
+      const { isMaths: _old, ...rest } = subject;
+      await DB.saveSubject({ ...rest, name: data.get("name").trim(), color: data.get("color"), kind: data.get("kind") });
       toast("Subject updated");
       R.render();
     });
@@ -315,7 +323,6 @@ const Library = (() => {
     { id: "flashcards", label: "Flashcards" },
     { id: "quiz", label: "Quiz" },
     { id: "exam", label: "Exam" },
-    { id: "reference", label: "Reference", maths: true },
     { id: "source", label: "Source text" },
   ];
 
@@ -330,7 +337,7 @@ const Library = (() => {
       return `<section class="card gen-panel gen-intro">
         <div>
           <h2>Turn this into a study set</h2>
-          <p>Clean notes, a summary, flashcards, a quiz and exam questions${isMaths(subject) ? ", plus a maths reference sheet" : ""}. Only from what's in your notes.</p>
+          <p>Clean notes, a summary, flashcards, a quiz and exam questions. Only from what's in your notes.</p>
         </div>
         ${hasKey
           ? `<button class="btn btn-primary" type="button" data-action="generate">${icon("spark")}Generate</button>`
@@ -429,42 +436,12 @@ const Library = (() => {
           </div>
           <ol class="exam-preview">${e.questions.map((q) => `<li><span>${inline(q.question)}</span><span class="marks">${plural(q.marks, "mark")}</span></li>`).join("")}</ol>`;
       }
-      case "reference": {
-        const r = out.reference;
-        if (!r) return pending();
-        return `<div class="tab-actions">
-            <a class="btn btn-primary" href="#/print/${encodeURIComponent(subject.id)}">${icon("print")}Print reference book</a>
-          </div>
-          ${r.topics.map((t) => referenceSheet(t)).join("")}`;
-      }
       case "source":
         return `<label class="visually-hidden" for="note-source">Your notes</label>
           <textarea class="textarea source-text" id="note-source" placeholder="Paste or type your notes here">${esc(note.rawText)}</textarea>
           <p class="hint source-hint">Changes save automatically. Press Regenerate all to update the study set.</p>`;
     }
     return "";
-  }
-
-  function referenceSheet(t) {
-    const diagram = Diagrams.render(t.diagram);
-    return `<article class="card ref-sheet">
-      <h3 class="ref-title">${esc(t.title)}</h3>
-      <div class="ref-grid ${diagram ? "" : "no-diagram"}">
-        ${diagram ? `<figure class="ref-figure">${diagram}${t.diagram.caption ? `<figcaption>${esc(t.diagram.caption)}</figcaption>` : ""}</figure>` : ""}
-        <div class="ref-body">
-          <h4>How to solve</h4>
-          <ol class="ref-steps">${t.steps.map((s) => `<li>${inline(s)}</li>`).join("")}</ol>
-          ${t.example.problem ? `<h4>Worked example</h4>
-            <div class="ref-example">
-              <p class="ref-problem">${inline(t.example.problem)}</p>
-              ${t.example.working.map((w) => `<p class="ref-line">${inline(w)}</p>`).join("")}
-              ${t.example.answer ? `<p class="ref-answer">${inline(t.example.answer)}</p>` : ""}
-            </div>` : ""}
-          ${t.cas.length ? `<h4>TI-Nspire CX CAS</h4>
-            <ol class="ref-cas">${t.cas.map((c) => `<li>${c.step ? `<span>${esc(c.step)}</span>` : ""}<kbd class="${/check on calculator/i.test(c.keys) ? "unsure" : ""}">${esc(c.keys)}</kbd></li>`).join("")}</ol>` : ""}
-        </div>
-      </div>
-    </article>`;
   }
 
   async function renderNote(id) {
@@ -485,6 +462,16 @@ const Library = (() => {
         <button class="btn btn-quiet btn-small" type="button" data-action="delete">${icon("trash")}Delete</button>
       </div>
       <div id="gen-slot"></div>
+      <section class="card ref-card">
+        <div>
+          <h2>Reference book</h2>
+          <p>One A4 page per topic in this note, added to the ${esc(subject.name)} book. Topics already in the book are updated, and you see the changes before they're saved.</p>
+        </div>
+        <div class="head-actions">
+          <a class="btn" href="#/book/${encodeURIComponent(subject.id)}">Open book</a>
+          <button class="btn btn-primary" type="button" data-action="make-pages">${icon("layers")}Make reference pages</button>
+        </div>
+      </section>
       <div class="tabs" role="tablist" aria-label="Study set" id="note-tabs"></div>
       <div id="tab-slot" role="tabpanel"></div>`;
   }
@@ -492,7 +479,7 @@ const Library = (() => {
   renderNote.mount = async (id) => {
     let note = await DB.getNote(id);
     const subject = await DB.getSubject(note.subjectId);
-    const tabs = TABS.filter((t) => !t.maths || isMaths(subject));
+    const tabs = TABS;
     let tab = Object.keys(note.outputs || {}).length || AI.isRunning(id) ? "clean" : "source";
     const genSlot = view.querySelector("#gen-slot");
     const tabBar = view.querySelector("#note-tabs");
@@ -599,6 +586,19 @@ const Library = (() => {
       }
     });
 
+    view.querySelector('[data-action="make-pages"]').addEventListener("click", async (e) => {
+      await flushSave();
+      if (!(note.rawText || "").trim()) return toast("Add some notes first");
+      if (!Gemini.getKey()) return (location.hash = "#/settings");
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner" aria-hidden="true"></span>Reading your notes…';
+      const saved = await Book.make(id);
+      btn.disabled = false;
+      btn.innerHTML = `${icon("layers")}Make reference pages`;
+      if (saved) location.hash = `#/book/${encodeURIComponent(note.subjectId)}`;
+    });
+
     view.querySelector('[data-action="delete"]').addEventListener("click", async () => {
       const ok = await confirmSheet({ title: `Delete “${note.title || "Untitled"}”?`, body: "This also deletes its flashcards. You can't undo this.", action: "Delete note" });
       if (!ok) return;
@@ -629,41 +629,9 @@ const Library = (() => {
     };
   };
 
-  /* ---------- Print: reference book ---------- */
-
-  async function renderPrint(subjectId) {
-    const subject = await DB.getSubject(subjectId);
-    if (!subject) { location.hash = "#/library"; return; }
-    const notes = (await DB.listNotes(subjectId)).filter((n) => n.outputs?.reference?.topics?.length).sort((a, b) => a.createdAt - b.createdAt);
-    const sheets = notes.flatMap((n) => n.outputs.reference.topics.map((t) => ({ note: n.title, topic: t })));
-    if (!sheets.length) {
-      return `<a class="back" href="#/subject/${encodeURIComponent(subjectId)}">${icon("back")}${esc(subject.name)}</a>
-        <div class="page-head"><div><h1>Reference book</h1></div></div>
-        ${emptyState({ mark: "print", title: "No reference sheets yet", body: "Generate a study set for a maths note and its reference sheets will be collected here." })}`;
-    }
-    return `
-      <div class="print-toolbar no-print">
-        <a class="back" href="#/subject/${encodeURIComponent(subjectId)}">${icon("back")}${esc(subject.name)}</a>
-        <button class="btn btn-primary" type="button" data-action="print">${icon("print")}Print or save as PDF</button>
-      </div>
-      <section class="print-page print-cover">
-        <span class="eyebrow">Reference book</span>
-        <h1>${esc(subject.name)}</h1>
-        <p class="lead">${plural(sheets.length, "topic")} · made ${new Date().toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}</p>
-        <h2>Contents</h2>
-        <ol class="contents">${sheets.map((s, i) => `<li><span>${esc(s.topic.title)}</span><span class="dots"></span><span>${i + 2}</span></li>`).join("")}</ol>
-      </section>
-      ${sheets.map((s, i) => `<section class="print-page"><div class="print-folio"><span>${esc(subject.name)} · ${esc(s.note)}</span><span>${i + 2}</span></div>${referenceSheet(s.topic)}</section>`).join("")}`;
-  }
-
-  renderPrint.mount = () => {
-    view.querySelector('[data-action="print"]')?.addEventListener("click", () => window.print());
-  };
-
   R.route(/^\/library$/, "library", renderLibrary);
   R.route(/^\/subject\/([^/]+)$/, "library", renderSubject);
   R.route(/^\/note\/([^/]+)$/, "library", renderNote);
-  R.route(/^\/print\/([^/]+)$/, "library", renderPrint);
 
-  return { referenceSheet };
+  return {};
 })();

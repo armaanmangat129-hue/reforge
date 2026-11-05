@@ -51,8 +51,29 @@ const R = (() => {
     { key: "terracotta", label: "Terracotta" },
   ];
   const subjectVar = (color) => `--subject: var(--subject-${SUBJECT_COLORS.some((c) => c.key === color) ? color : "navy"})`;
-  const looksLikeMaths = (name) => /\bmath|maths|methods|specialist|calculus|algebra|statistics|further|general maths|mathematics/i.test(name || "");
-  const isMaths = (subject) => (subject && typeof subject.isMaths === "boolean" ? subject.isMaths : looksLikeMaths(subject && subject.name));
+  /* Reference-book style per subject. Detected from the name; the subject's own setting wins. */
+  const KINDS = [
+    { id: "maths", label: "Maths", note: "Formula box, how to solve, worked example, TI-Nspire CAS steps" },
+    { id: "science", label: "Science", note: "Labelled diagram, formulas with units, definitions table, practical box" },
+    { id: "english", label: "English", note: "Key quotes with techniques, themes, characters, TEEL paragraph" },
+    { id: "history", label: "History / Humanities", note: "Timeline, key people, causes and effects" },
+    { id: "other", label: "Other", note: "The base page format" },
+  ];
+  const KIND_PATTERNS = {
+    maths: /\bmath|maths|methods|specialist|calculus|algebra|statistics|further|mathematics|geometry|trig/i,
+    science: /science|chem|physics|bio|psych|environment|earth|anatomy|physiology|health|forensic/i,
+    english: /english|literature|\blit\b|literacy|language|drama|poetry|writing|eal/i,
+    history: /history|humanities|geography|legal|law|politic|economics|business|society|civics|philosophy|religion|ancient|modern|sociology/i,
+  };
+  const detectKind = (name) => Object.keys(KIND_PATTERNS).find((k) => KIND_PATTERNS[k].test(name || "")) || "other";
+  const subjectKind = (subject) => {
+    if (!subject) return "other";
+    if (KINDS.some((k) => k.id === subject.kind)) return subject.kind;
+    if (subject.isMaths === true) return "maths"; // subjects saved before reference styles existed
+    return detectKind(subject.name);
+  };
+  const looksLikeMaths = (name) => detectKind(name) === "maths";
+  const isMaths = (subject) => subjectKind(subject) === "maths";
 
   const plural = (n, word, many) => `${n} ${n === 1 ? word : many || word + "s"}`;
 
@@ -241,7 +262,7 @@ const R = (() => {
       const html = await match.render(...params);
       if (token !== renderToken || html === undefined) return;
       if (cleanup) { try { cleanup(); } catch { /* ignore */ } cleanup = null; }
-      document.body.classList.toggle("print-mode", path.startsWith("/print/"));
+      document.body.classList.toggle("book-mode", path.startsWith("/book/"));
       setActiveTab(match.tab);
       view.innerHTML = html;
       if (match.render.mount) cleanup = (await match.render.mount(...params)) || null;
@@ -256,7 +277,7 @@ const R = (() => {
   window.addEventListener("hashchange", render);
 
   return {
-    view, esc, icon, SUBJECT_COLORS, subjectVar, isMaths, looksLikeMaths, plural, when, dayKey, addDays, daysBetween, endOfToday, prettyDay,
+    view, esc, icon, SUBJECT_COLORS, subjectVar, isMaths, looksLikeMaths, KINDS, detectKind, subjectKind, plural, when, dayKey, addDays, daysBetween, endOfToday, prettyDay,
     snippet, highlight, inline, md, toast, openSheet, confirmSheet, emptyState, skeleton, shuffle, route, render,
     query: () => query,
   };
