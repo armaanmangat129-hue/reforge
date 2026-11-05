@@ -2,12 +2,12 @@
    Same-origin files: network first (so updates show straight away), cache as the fallback.
    Fonts and pdf.js from CDNs: cache first. Gemini calls are never cached here. */
 
-const VERSION = "reforge-v5";
+const VERSION = "reforge-v6";
 const SHELL = [
   "./", "styles.css", "motion.css", "manifest.json", "icon.svg",
   "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png", "icons/favicon-32.png",
-  "motion.js", "core.js", "db.js", "gemini.js", "srs.js", "ai.js", "diagrams.js", "upload.js",
-  "book.js", "library.js", "study.js", "tutor.js", "planner.js", "settings.js", "app.js",
+  "motion.js", "core.js", "db.js", "gemini.js", "srs.js", "rewards.js", "ai.js", "diagrams.js", "upload.js",
+  "book.js", "library.js", "study.js", "tutor.js", "planner.js", "settings.js", "home.js", "app.js",
 ];
 const CDN = /^https:\/\/(fonts\.googleapis\.com|fonts\.gstatic\.com|cdnjs\.cloudflare\.com)\//;
 

@@ -4,6 +4,7 @@
   const { icon } = R;
 
   const TABS = [
+    { id: "home", label: "Home" },
     { id: "library", label: "Library" },
     { id: "study", label: "Study" },
     { id: "tutor", label: "Tutor" },
@@ -37,7 +38,7 @@
     window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
   }
 
-  if (!location.hash) history.replaceState(null, "", "#/library");
+  if (!location.hash) history.replaceState(null, "", "#/home");
   R.render();
   refreshBadges();
 })();

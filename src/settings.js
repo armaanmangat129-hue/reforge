@@ -6,7 +6,7 @@
   async function renderSettings() {
     const key = Gemini.getKey();
     const model = Gemini.getModel();
-    const [subjects, notes, cards] = await Promise.all([DB.listSubjects(), DB.listNotes(), DB.all("cards")]);
+    const [subjects, notes, cards, rewardSettings] = await Promise.all([DB.listSubjects(), DB.listNotes(), DB.all("cards"), Rewards.getSettings()]);
     return `
       <div class="page-head"><div><span class="eyebrow">Preferences</span><h1>Settings</h1></div></div>
 
@@ -44,6 +44,25 @@
               <div><strong>${esc(m.label)}</strong><span>${esc(m.note)}</span></div></label>`
           ).join("")}
         </fieldset>
+      </section>
+
+      <section class="card panel reveal" aria-labelledby="rewards-heading">
+        <div class="panel-head">
+          <h2 id="rewards-heading">Goals and sounds</h2>
+          <p>Your daily XP goal fills the ring on Home. Reaching it earns 10 bonus XP.</p>
+        </div>
+        <div class="field">
+          <label class="label" for="daily-goal">Daily XP goal</label>
+          <div class="input-row goal-input">
+            <input class="input" id="daily-goal" type="number" min="10" max="500" step="10" value="${rewardSettings.dailyGoal}" inputmode="numeric">
+            <span class="hint">XP a day</span>
+          </div>
+        </div>
+        <label class="switch-row">
+          <span><strong>Sounds</strong><span>Small click and level-up sounds.</span></span>
+          <input type="checkbox" role="switch" id="sounds" ${rewardSettings.sounds ? "checked" : ""}>
+          <span class="switch" aria-hidden="true"></span>
+        </label>
       </section>
 
       <section class="card panel reveal" aria-labelledby="data-heading">
@@ -119,6 +138,19 @@
         toast("Model updated");
       })
     );
+
+    const goal = view.querySelector("#daily-goal");
+    goal.addEventListener("change", async () => {
+      const n = Math.max(10, Math.min(500, Math.round(Number(goal.value) / 10) * 10 || 50));
+      goal.value = n;
+      await Rewards.setSettings({ dailyGoal: n });
+      toast(`Daily goal set to ${n} XP`);
+    });
+    view.querySelector("#sounds").addEventListener("change", async (e) => {
+      await Rewards.setSettings({ sounds: e.target.checked });
+      if (e.target.checked) Rewards.sound.click();
+      toast(e.target.checked ? "Sounds on" : "Sounds off");
+    });
 
     view.querySelector('[data-action="export"]').addEventListener("click", async () => {
       const data = await DB.exportAll();

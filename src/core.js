@@ -10,6 +10,10 @@ const R = (() => {
     String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
   const ICONS = {
+    home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9v11h14V9"/><path d="M10 20v-6h4v6"/>',
+    snow: '<path d="M12 2v20M4.9 6l14.2 12M19.1 6 4.9 18"/><path d="m9 4 3 3 3-3M9 20l3-3 3 3"/>',
+    moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/>',
+    sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
     library: '<path d="M4 19.5V5a2 2 0 0 1 2-2h12v15H6a2 2 0 0 0-2 2Zm0 0A2 2 0 0 0 6 22h12v-4"/><path d="M8 7h6"/>',
     study: '<rect x="3" y="6" width="14" height="14" rx="2"/><path d="M7 3h12a2 2 0 0 1 2 2v12"/>',
     tutor: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12Z"/><path d="M9 11h.01M13 11h.01M17 11h.01"/>',
@@ -263,10 +267,10 @@ const R = (() => {
   let cleanup = null;
   let query = new URLSearchParams();
   async function render() {
-    const [path, qs = ""] = (location.hash.replace(/^#/, "") || "/library").split("?");
+    const [path, qs = ""] = (location.hash.replace(/^#/, "") || "/home").split("?");
     query = new URLSearchParams(qs);
     const match = routes.find((r) => r.re.test(path));
-    if (!match) return (location.hash = "#/library");
+    if (!match) return (location.hash = "#/home");
     const token = ++renderToken;
     const params = path.match(match.re).slice(1).map(decodeURIComponent);
     try {
@@ -279,7 +283,7 @@ const R = (() => {
       if (match.render.mount) cleanup = (await match.render.mount(...params)) || null;
       Motion.reveal(view);
       window.scrollTo(0, 0);
-      document.title = path === "/library" ? "Reforge | Notes into study tools" : `${view.querySelector("h1")?.textContent?.trim() || "Reforge"} | Reforge`;
+      document.title = path === "/home" ? "Reforge | Notes into study tools" : `${view.querySelector("h1")?.textContent?.trim() || "Reforge"} | Reforge`;
     } catch (err) {
       console.error(err);
       view.innerHTML = emptyState({ mark: "alert", title: "Something went wrong", body: "Reforge couldn't open this screen. Reload the page to try again." });

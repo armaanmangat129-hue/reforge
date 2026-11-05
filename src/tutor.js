@@ -128,6 +128,7 @@ const Tutor = (() => {
         const res = await AI.tutorReply({ subject, notes: scope, mode, history, message: text, images });
         const titles = scope.map((n) => n.title.toLowerCase());
         chat.messages.push({ role: "tutor", text: res.answer, inNotes: res.inNotes, sources: res.sources.filter((s) => titles.includes(s.toLowerCase())), at: Date.now() });
+        SRS.track("tutor");
       } catch (err) {
         chat.messages.pop();
         input.value = text;

@@ -549,6 +549,7 @@ Keep each page small enough to fit on one A4 sheet.`;
       });
     }
     toast(chosen.length ? `${plural(chosen.length, "page")} saved to the ${proposal.subject.name} book` : "Nothing saved");
+    if (chosen.length) SRS.track("pages", chosen.length);
     return chosen.length;
   }
 

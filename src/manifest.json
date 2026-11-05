@@ -3,7 +3,7 @@
   "short_name": "Reforge",
   "description": "Turn your class notes into flashcards, quizzes, exam questions and a printable reference book.",
   "id": "./",
-  "start_url": "./#/library",
+  "start_url": "./#/home",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait-primary",

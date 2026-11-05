@@ -274,6 +274,7 @@ const Library = (() => {
         const data = await noteSheet(subject);
         if (!data) return;
         const note = await DB.saveNote({ subjectId: id, title: data.get("title").trim(), rawText: data.get("rawText") });
+        SRS.track("notes");
         toast("Notes saved");
         location.hash = `#/note/${encodeURIComponent(note.id)}`;
         if (data.submitter === "generate") startGenerate(note.id);

@@ -348,6 +348,7 @@ const Study = (() => {
       await DB.put("attempts", { id: DB.uid(), subjectId, noteId, kind: "quiz", score, total, wrong: wrong.map((w) => ({ question: w.question, topic: w.topic })), at: Date.now() });
       const gained = SRS.XP.quiz + score * SRS.XP.quizCorrect;
       await SRS.award(gained, "quiz");
+      if (pct(score, total) >= 80) SRS.track("quiz80", 1, score === total ? { perfectQuiz: true } : {});
       slot.innerHTML = `<div class="card panel result">
         <div class="result-score"><span class="big">${score}<small>/${total}</small></span><span>${pct(score, total)}% · <strong class="gold-text">+${gained} XP</strong></span></div>
         ${wrong.length
