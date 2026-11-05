@@ -32,6 +32,11 @@
   window.addEventListener("reforge:progress", refreshBadges);
   window.addEventListener("hashchange", refreshBadges);
 
+  // Installable app + offline: register the service worker (needs https or localhost)
+  if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
+    window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+  }
+
   if (!location.hash) history.replaceState(null, "", "#/library");
   R.render();
   refreshBadges();

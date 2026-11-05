@@ -587,10 +587,10 @@ const Library = (() => {
     });
 
     view.querySelector('[data-action="make-pages"]').addEventListener("click", async (e) => {
+      const btn = e.currentTarget; // currentTarget is cleared once we await
       await flushSave();
       if (!(note.rawText || "").trim()) return toast("Add some notes first");
       if (!Gemini.getKey()) return (location.hash = "#/settings");
-      const btn = e.currentTarget;
       btn.disabled = true;
       btn.innerHTML = '<span class="spinner" aria-hidden="true"></span>Reading your notes…';
       const saved = await Book.make(id);

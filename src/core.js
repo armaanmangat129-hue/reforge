@@ -268,7 +268,7 @@ const R = (() => {
       if (match.render.mount) cleanup = (await match.render.mount(...params)) || null;
       Motion.reveal(view);
       window.scrollTo(0, 0);
-      document.title = `${view.querySelector("h1")?.textContent?.trim() || "Reforge"} · Reforge`;
+      document.title = path === "/library" ? "Reforge | Notes into study tools" : `${view.querySelector("h1")?.textContent?.trim() || "Reforge"} | Reforge`;
     } catch (err) {
       console.error(err);
       view.innerHTML = emptyState({ mark: "alert", title: "Something went wrong", body: "Reforge couldn't open this screen. Reload the page to try again." });
