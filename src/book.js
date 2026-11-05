@@ -531,10 +531,21 @@ Keep each page small enough to fit on one A4 sheet.`;
     const chosen = current.changes.filter((c) => picked.has(c.key));
     let order = (await DB.all("pages", "subjectId", proposal.subject.id)).reduce((m, p) => Math.max(m, p.order), -1) + 1;
     for (const c of chosen) {
-      await savePages(proposal.subject, proposal.kind, c.page, {
-        group: c.match ? c.match.group : null,
-        order: c.match ? c.match.order : order++,
-        sourceNoteIds: c.sourceNoteIds,
+      let { page, match, sourceNoteIds } = c;
+      if (!match) {
+        // The book may have changed since the review opened (another save): never add a duplicate topic
+        const now = groups(await pagesOf(proposal.subject.id)).map(joinParts);
+        const same = now.find((p) => norm(p.title) === norm(page.title));
+        if (same) {
+          match = same;
+          page = mergeInto(same, page).page;
+          sourceNoteIds = [...new Set([...(same.sourceNoteIds || []), ...sourceNoteIds])];
+        }
+      }
+      await savePages(proposal.subject, proposal.kind, page, {
+        group: match ? match.group : null,
+        order: match ? match.order : order++,
+        sourceNoteIds,
       });
     }
     toast(chosen.length ? `${plural(chosen.length, "page")} saved to the ${proposal.subject.name} book` : "Nothing saved");
