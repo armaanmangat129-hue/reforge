@@ -2,9 +2,9 @@
    Same-origin files: network first (so updates show straight away), cache as the fallback.
    Fonts and pdf.js from CDNs: cache first. Gemini calls are never cached here. */
 
-const VERSION = "reforge-v1";
+const VERSION = "reforge-v2";
 const SHELL = [
-  "./", "index.html", "styles.css", "motion.css", "manifest.json", "icon.svg",
+  "./", "styles.css", "motion.css", "manifest.json", "icon.svg",
   "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png", "icons/favicon-32.png",
   "motion.js", "core.js", "db.js", "gemini.js", "srs.js", "ai.js", "diagrams.js", "upload.js",
   "book.js", "library.js", "study.js", "tutor.js", "planner.js", "settings.js", "app.js",
@@ -43,9 +43,10 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     fetch(req)
       .then((res) => {
-        if (res.ok) caches.open(VERSION).then((c) => c.put(req, res.clone()));
+        // Cloudflare redirects /index.html to /, and redirected responses can't be replayed
+        if (res.ok && !res.redirected) caches.open(VERSION).then((c) => c.put(req, res.clone()));
         return res;
       })
-      .catch(async () => (await caches.match(req, { ignoreSearch: true })) || (req.mode === "navigate" ? caches.match("index.html") : Response.error()))
+      .catch(async () => (await caches.match(req, { ignoreSearch: true })) || (req.mode === "navigate" ? caches.match("./") : Response.error()))
   );
 });
