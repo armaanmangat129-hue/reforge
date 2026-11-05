@@ -16,7 +16,11 @@ Then open http://localhost:3400.
 
 ## Deploy
 
-Every push to `main` publishes `src/` to GitHub Pages using `.github/workflows/pages.yml`.
+Live at **https://reforge-study.pages.dev** (Cloudflare Pages project `reforge-study`, output folder `src`, no build command).
+
+- Once the GitHub repo is connected to the Pages project in the Cloudflare dashboard, every push to `main` redeploys.
+- Until then, deploy by hand: `npx wrangler pages deploy src --project-name reforge-study --branch main`
+- `.github/workflows/pages.yml` also publishes `src/` to GitHub Pages (https://armaanmangat129-hue.github.io/reforge/) as a backup.
 
 ## Files
 
