@@ -1413,3 +1413,19 @@ html.printing .d-shape, html.printing .d-box { fill: #f2f2f2; stroke: #000; }
 }
 @keyframes xp-fade { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .xp-float { animation-duration: 1.2s !important; } }
+
+/* Upload progress and results in the Add notes sheet */
+.upload-progress { display: grid; gap: 6px; padding: var(--space-3) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-sunken); }
+.upload-progress[hidden], .upload-results[hidden] { display: none; }
+.up-head { display: flex; justify-content: space-between; gap: var(--space-3); font-size: 0.875rem; font-weight: 600; }
+.up-name { overflow-wrap: anywhere; }
+.up-pct { font-variant-numeric: tabular-nums; color: var(--accent); }
+.up-msg { font-size: 0.8125rem; color: var(--text-muted); }
+.upload-results { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.upload-results li { display: flex; gap: var(--space-2); align-items: flex-start; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); font-size: 0.875rem; }
+.upload-results li .icon { width: 18px; height: 18px; margin-top: 2px; flex-shrink: 0; }
+.upload-results li.ok { background: var(--success-soft); color: var(--success); }
+.upload-results li.ok strong { color: var(--text); }
+.upload-results li.bad { background: var(--danger-soft); color: var(--danger); }
+.upload-btn.is-disabled { opacity: 0.5; pointer-events: none; }
+.textarea.drop-target { border-color: var(--focus); box-shadow: 0 0 0 3px var(--accent-soft); background: var(--accent-soft); }

@@ -73,9 +73,14 @@ const Library = (() => {
               <input type="file" multiple accept="${Upload.ACCEPT}" class="visually-hidden" data-upload>
             </label>
           </div>
-          <textarea class="textarea" id="note-text" name="rawText" required placeholder="Paste or type your notes here. Messy is fine."></textarea>
-          <p class="status-line" data-upload-status hidden></p>
-          <span class="hint">PDF, Word (.docx), text, or up to 12 photos of handwritten notes or textbook pages.</span>
+          <div class="upload-progress" data-upload-progress hidden aria-live="polite">
+            <div class="up-head"><span class="up-name"></span><span class="up-pct"></span></div>
+            <div class="bar" role="progressbar" aria-label="Upload progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span style="width:0%"></span></div>
+            <p class="up-msg"></p>
+          </div>
+          <ul class="upload-results" data-upload-results hidden></ul>
+          <textarea class="textarea" id="note-text" name="rawText" required placeholder="Paste or type your notes here, or drop files here. Messy is fine."></textarea>
+          <span class="hint">PDF, Word (.docx), text, or up to 12 photos (JPG, PNG, iPhone HEIC) of handwritten notes or textbook pages.</span>
         </div>
       </div>
       <div class="sheet-foot">
@@ -91,31 +96,71 @@ const Library = (() => {
     const input = form.querySelector("[data-upload]");
     const area = form.querySelector("#note-text");
     const title = form.querySelector("#note-title");
-    const status = form.querySelector("[data-upload-status]");
-    const buttons = form.querySelectorAll(".sheet-foot .btn");
-    const say = (tone, text) => {
-      status.hidden = false;
-      status.dataset.tone = tone;
-      status.innerHTML = `${tone === "error" ? icon("alert") : tone === "ok" ? icon("check") : '<span class="spinner" aria-hidden="true"></span>'}<span>${esc(text)}</span>`;
-    };
-    input.addEventListener("change", async () => {
-      if (!input.files.length) return;
-      const files = [...input.files];
-      buttons.forEach((b) => (b.disabled = true));
+    const box = form.querySelector("[data-upload-progress]");
+    const bar = box.querySelector(".bar");
+    const list = form.querySelector("[data-upload-results]");
+    const buttons = form.querySelectorAll(".sheet-foot .btn, .upload-btn");
+    let busy = false;
+
+    function show({ index, total, name, message, percent }) {
+      box.hidden = false;
+      // overall percent across all files, so the bar only moves forward
+      const overall = percent == null ? null : Math.min(100, Math.round(((index + percent / 100) / total) * 100));
+      box.querySelector(".up-name").textContent = total > 1 ? `${name} (${index + 1} of ${total})` : name;
+      box.querySelector(".up-pct").textContent = overall == null ? "" : `${overall}%`;
+      box.querySelector(".up-msg").textContent = message;
+      bar.classList.toggle("bar-live", overall == null);
+      if (overall != null) {
+        bar.querySelector("span").style.width = `${overall}%`;
+        bar.setAttribute("aria-valuenow", overall);
+      }
+    }
+
+    async function handle(files) {
+      if (busy || !files.length) return;
+      busy = true;
+      buttons.forEach((b) => b.classList.add("is-disabled"));
+      form.querySelectorAll(".sheet-foot .btn").forEach((b) => (b.disabled = true));
+      list.hidden = true;
+      list.innerHTML = "";
+      show({ index: 0, total: 1, name: files[0].name, message: "Starting…", percent: 0 });
+      box.scrollIntoView({ block: "nearest", behavior: "smooth" });
       try {
-        const results = await Upload.extract(files, (msg) => say("busy", msg));
-        const text = results.map((r) => (results.length > 1 ? `# ${r.name}\n\n${r.text}` : r.text)).join("\n\n");
-        area.value = area.value.trim() ? `${area.value.trim()}\n\n${text}` : text;
-        if (!title.value.trim()) title.value = files[0].name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").slice(0, 120);
-        say("ok", `Text added from ${plural(files.length, "file")}. Check it for mistakes before you generate.`);
-        area.focus();
+        const { results, errors } = await Upload.extract(files, show);
+        if (results.length) {
+          const text = results.map((r) => (results.length > 1 ? `# ${r.name}\n\n${r.text}` : r.text)).join("\n\n");
+          area.value = area.value.trim() ? `${area.value.trim()}\n\n${text}` : text;
+          if (!title.value.trim()) title.value = (results[0].name.includes(" photos") ? "Photo notes" : results[0].name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ")).slice(0, 120);
+        }
+        list.innerHTML = [
+          ...results.map((r) => `<li class="ok">${icon("check")}<span><strong>${esc(r.name)}</strong> added. Check the text before you generate.${r.note ? ` ${esc(r.note)}` : ""}</span></li>`),
+          ...errors.map((e) => `<li class="bad">${icon("alert")}<span>${esc(e.message)}</span></li>`),
+        ].join("");
+        list.hidden = false;
+        if (results.length) area.focus({ preventScroll: true });
       } catch (err) {
         console.error(err);
-        say("error", err.message || "That file couldn't be read.");
+        list.innerHTML = `<li class="bad">${icon("alert")}<span>${esc(err.message || "Those files couldn't be read.")}</span></li>`;
+        list.hidden = false;
       } finally {
-        buttons.forEach((b) => (b.disabled = false));
+        box.hidden = true;
+        busy = false;
+        buttons.forEach((b) => b.classList.remove("is-disabled"));
+        form.querySelectorAll(".sheet-foot .btn").forEach((b) => (b.disabled = false));
         input.value = "";
+        list.scrollIntoView({ block: "nearest", behavior: "smooth" });
       }
+    }
+
+    input.addEventListener("change", () => handle([...input.files]));
+    // drop files straight onto the notes box
+    area.addEventListener("dragover", (e) => { if (e.dataTransfer?.types?.includes("Files")) { e.preventDefault(); area.classList.add("drop-target"); } });
+    area.addEventListener("dragleave", () => area.classList.remove("drop-target"));
+    area.addEventListener("drop", (e) => {
+      if (!e.dataTransfer?.files?.length) return;
+      e.preventDefault();
+      area.classList.remove("drop-target");
+      handle([...e.dataTransfer.files]);
     });
   }
 
