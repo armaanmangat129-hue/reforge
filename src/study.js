@@ -144,7 +144,7 @@ const Study = (() => {
         </div>
         <div class="review-tools">
           <button class="btn btn-quiet btn-small" type="button" data-edit>${icon("edit")}Edit card</button>
-          <span class="hint hide-touch">Space to flip · 1-4 to rate</span>
+          <span class="hint hide-touch">Space to flip · 1 Again · 2 Good · 3 Easy</span>
           <span class="hint show-touch">Tap to flip · swipe right for Good, left for Again</span>
         </div>`;
       wireCard();
@@ -170,7 +170,8 @@ const Study = (() => {
       // practice mode (nothing due on this note) doesn't change the schedule
       const next = practice ? card : SRS.schedule(card, q);
       if (!practice) await DB.put("cards", next);
-      if (q < 3) queue.push(next); // see it again this session
+      // a missed card comes back after 3 other cards (or at the end of a short session)
+      if (q < 3) queue.splice(Math.min(3, queue.length), 0, next);
       else done++;
       reviewed++;
       const gained = q >= 4 ? SRS.XP.reviewGood : SRS.XP.review;
@@ -240,7 +241,7 @@ const Study = (() => {
       if (e.target.closest?.("input, textarea, select, dialog")) return;
       if (e.key === " " || e.key === "Enter") {
         if (!flipped) { e.preventDefault(); flip(); }
-      } else if (["1", "2", "3", "4"].includes(e.key)) {
+      } else if (["1", "2", "3"].includes(e.key)) {
         rate(SRS.RATINGS[Number(e.key) - 1].q);
       } else if (e.key.toLowerCase() === "e" && current) {
         slot.querySelector("[data-edit]")?.click();

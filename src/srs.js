@@ -4,10 +4,10 @@ const SRS = (() => {
   const DAY = 86400000;
   const RATINGS = [
     { id: "again", label: "Again", q: 1, key: "1" },
-    { id: "hard", label: "Hard", q: 3, key: "2" },
-    { id: "good", label: "Good", q: 4, key: "3" },
-    { id: "easy", label: "Easy", q: 5, key: "4" },
+    { id: "good", label: "Good", q: 4, key: "2" },
+    { id: "easy", label: "Easy", q: 5, key: "3" },
   ];
+  const AGAIN_MS = 10 * 60 * 1000; // a missed card comes back in 10 minutes (still due today)
 
   function newCard({ subjectId, noteId, front, back, source = "ai" }) {
     return { id: DB.uid(), subjectId, noteId, front, back, source, ef: 2.5, interval: 0, reps: 0, due: Date.now(), createdAt: Date.now() };
@@ -29,13 +29,13 @@ const SRS = (() => {
     }
     ef = Math.max(1.3, ef + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02)));
     const startOfToday = new Date().setHours(0, 0, 0, 0);
-    const due = q < 3 ? startOfToday + DAY : startOfToday + interval * DAY;
+    const due = q < 3 ? Date.now() + AGAIN_MS : startOfToday + interval * DAY;
     return { ...card, ef: +ef.toFixed(3), interval, reps, due, lastReviewed: Date.now() };
   }
 
   function previewInterval(card, q) {
     const next = schedule(card, q);
-    if (q < 3) return "again";
+    if (q < 3) return "10 min";
     return next.interval === 1 ? "1 day" : next.interval < 30 ? `${next.interval} days` : `${Math.round(next.interval / 30)} mo`;
   }
 

@@ -2,7 +2,7 @@
    Same-origin files: network first (so updates show straight away), cache as the fallback.
    Libraries from cdnjs/jsdelivr (pdf.js, mammoth, Tesseract): cache first. AI calls are never cached here. */
 
-const VERSION = "reforge-v8";
+const VERSION = "reforge-v9";
 const SHELL = [
   "./", "styles.css", "motion.css", "manifest.json", "icon.svg",
   "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png", "icons/favicon-32.png",

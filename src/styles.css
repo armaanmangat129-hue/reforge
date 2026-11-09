@@ -1429,3 +1429,7 @@ html.printing .d-shape, html.printing .d-box { fill: #f2f2f2; stroke: #000; }
 .upload-results li.bad { background: var(--danger-soft); color: var(--danger); }
 .upload-btn.is-disabled { opacity: 0.5; pointer-events: none; }
 .textarea.drop-target { border-color: var(--focus); box-shadow: 0 0 0 3px var(--accent-soft); background: var(--accent-soft); }
+
+/* Again / Good / Easy */
+.ratings { grid-template-columns: repeat(3, 1fr) !important; }
+.card-count { margin: -4px 0 var(--space-3); }

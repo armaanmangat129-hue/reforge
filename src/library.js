@@ -450,8 +450,11 @@ const Library = (() => {
         if (!cards.length && !out.flashcards) return pending();
         return `<div class="tab-actions">
             <a class="btn btn-primary" href="#/review/note/${encodeURIComponent(note.id)}">${icon("study")}Study these cards</a>
-            <button class="btn" type="button" data-action="add-card">${icon("plus")}Add a card</button>
+            <button class="btn" type="button" data-action="more-cards">${icon("spark")}Generate more</button>
+            <button class="btn btn-quiet" type="button" data-action="add-card">${icon("plus")}Add a card</button>
           </div>
+          <p class="hint card-count">${plural(cards.length, "card")} · ${cards.filter((c) => c.due <= R.endOfToday()).length} due today</p>
+          <p class="status-line" data-more-status hidden></p>
           <ul class="card-list">${cards
             .map(
               (c) => `<li class="card flash-row">
@@ -610,6 +613,36 @@ const Library = (() => {
     });
 
     slot.addEventListener("click", async (e) => {
+      const more = e.target.closest('[data-action="more-cards"]');
+      if (more) {
+        if (!AI.getKey()) return (location.hash = "#/settings");
+        await flushSave();
+        const status = slot.querySelector("[data-more-status]");
+        const say = (tone, msg) => {
+          status.hidden = false;
+          status.dataset.tone = tone;
+          status.innerHTML = `${tone === "ok" ? icon("check") : tone === "error" ? icon("alert") : '<span class="spinner" aria-hidden="true"></span>'}<span>${esc(msg)}</span>`;
+        };
+        more.disabled = true;
+        say("busy", "Writing new cards from your notes…");
+        try {
+          const res = await AI.moreCards(id, { onStatus: (m) => say("busy", m) });
+          await drawTab();
+          const st = slot.querySelector("[data-more-status]");
+          if (st) {
+            st.hidden = false;
+            st.dataset.tone = res.added ? "ok" : "busy";
+            st.innerHTML = `${icon(res.added ? "check" : "alert")}<span>${res.added
+              ? `${plural(res.added, "new card")} added${res.parts > 1 ? ` from part ${res.part + 1} of ${res.parts} of your notes` : ""}. They're due now.`
+              : res.parts > 1 ? `No new cards in part ${res.part + 1} of ${res.parts}. Press Generate more to try the next part.` : "Your notes look fully covered. Add more notes to get more cards."}</span>`;
+          }
+          if (res.added) toast(`+${plural(res.added, "card")}`);
+        } catch (err) {
+          say("error", err.message || "Couldn't make more cards. Try again.");
+          more.disabled = false;
+        }
+        return;
+      }
       const add = e.target.closest('[data-action="add-card"]');
       const edit = e.target.closest("[data-edit-card]");
       const del = e.target.closest("[data-delete-card]");

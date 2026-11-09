@@ -310,6 +310,7 @@ const AI = (() => {
   /* ---------- Validation ---------- */
   const s = (v) => (typeof v === "string" ? v.trim() : typeof v === "number" ? String(v) : "");
   const list = (v) => (Array.isArray(v) ? v : []);
+  const list_ = list;
   function need(cond, msg) {
     if (!cond) throw new Error(msg);
   }
@@ -414,6 +415,17 @@ Write ${count} exam-style short-answer questions on these notes, like a school a
 - marks: 1 to 5, matching how much the answer needs.
 - modelAnswer: a full-mark answer using only the notes. For multi-mark questions, make each marking point clear.
 - topic: 1-4 words naming the topic.`,
+
+    more: ({ title, text, existing, count }) =>
+      `${notesBlock(title, text)}
+
+The student already has these flashcards for this note:
+${existing || "(none yet)"}
+
+Write ${count} NEW flashcards from these notes that do NOT repeat or rephrase any card above.
+- Cover things the existing cards miss: other facts, definitions, steps, formulas, examples, "why" and "how" questions, and applications.
+- front: a specific question or prompt. Never a yes/no question. back: the answer in under 30 words, from the notes.
+- Use only the notes. If almost everything is already covered, write fewer cards; return an empty list only if nothing new is left.`,
 
     condense: ({ points }) =>
       `These summary points come from different parts of the same notes:\n${points.map((p) => "- " + p).join("\n")}\n\nCombine them into at most 5 bullet points. Don't add anything new.`,
@@ -565,6 +577,55 @@ Write ${count} exam-style short-answer questions on these notes, like a school a
 
   const isRunning = (noteId) => running.has(noteId);
 
+  /* ---------- Generate more flashcards (no limit, no repeats) ---------- */
+  // Near-duplicate check on the key words of a card's question (filler words removed)
+  const STOP = new Set("a an the of to in on for and or is are was were be what which who whom whose when where why how does do did can could would should will define describe explain state give name list write find calculate show".split(" "));
+  const words = (t) => new Set(String(t).toLowerCase().replace(/[^a-z0-9 ]+/g, " ").split(/\s+/).filter((w) => w && !STOP.has(w)));
+  function similar(a, b) {
+    const A = words(a), B = words(b);
+    if (!A.size || !B.size) return a.trim().toLowerCase() === b.trim().toLowerCase();
+    let both = 0;
+    A.forEach((w) => B.has(w) && both++);
+    return both / Math.max(A.size, B.size) > 0.8;
+  }
+
+  /* Adds new cards to a note. Long notes are covered one chunk at a time, in turn. */
+  async function moreCards(noteId, { onStatus } = {}) {
+    const note = await DB.getNote(noteId);
+    const text = (note.rawText || "").trim();
+    if (!text) throw new AIError("Add some notes first.", 0);
+    const existing = await DB.all("cards", "noteId", noteId);
+    const chunks = chunk(text);
+    const part = (note.moreCursor || 0) % chunks.length;
+
+    // tell the model what's already there, newest first, within the token budget
+    let list = "";
+    const budget = Math.min(6000, Math.floor(chunkChars() * 0.6));
+    for (const c of existing.slice().sort((a, b) => b.createdAt - a.createdAt)) {
+      const line = `- ${c.front.replace(/\s+/g, " ").slice(0, 140)}\n`;
+      if (list.length + line.length > budget) break;
+      list += line;
+    }
+    const res = await json({
+      system: GROUNDING,
+      prompt: PROMPTS.more({ title: chunks.length > 1 ? `${note.title} (part ${part + 1} of ${chunks.length})` : note.title, text: chunks[part], existing: list.trim(), count: "10 to 15" }),
+      schema: SCHEMAS.flashcards,
+      validate: (v) => ({ cards: list_(v.cards).map((c) => ({ front: s(c.front), back: s(c.back) })).filter((c) => c.front && c.back) }),
+      cache: false,
+      temperature: 0.7,
+      onStatus,
+    });
+    const fresh = [];
+    for (const c of res.cards) {
+      if (existing.some((e) => similar(e.front, c.front)) || fresh.some((f) => similar(f.front, c.front))) continue;
+      fresh.push(c);
+    }
+    await DB.putMany("cards", fresh.map((c) => SRS.newCard({ subjectId: note.subjectId, noteId, front: c.front, back: c.back, source: "more" })));
+    const latest = await DB.getNote(noteId);
+    await DB.put("notes", { ...latest, moreCursor: part + 1 });
+    return { added: fresh.length, part, parts: chunks.length, total: existing.length + fresh.length };
+  }
+
   /* ---------- Other AI tasks ---------- */
 
   function notesContext(notes, limit = contextChars()) {
@@ -693,6 +754,6 @@ Return:
     getKey, setKey, getModel, setModel, listModels, pickDefault, pickVision, currentModel, visionModel, testKey,
     json, text, AIError, MSG, chunkChars, contextChars, limits,
     // features
-    STEPS, stepsFor, generate, isRunning, freshQuiz, markExam, TUTOR_MODES, tutorReply, transcribe, chunk, MAX_CHARS,
+    STEPS, stepsFor, generate, isRunning, moreCards, freshQuiz, markExam, TUTOR_MODES, tutorReply, transcribe, chunk, MAX_CHARS,
   };
 })();
