@@ -280,7 +280,12 @@ const R = (() => {
       document.body.classList.toggle("book-mode", path.startsWith("/book/"));
       setActiveTab(match.tab);
       view.innerHTML = html;
-      if (match.render.mount) cleanup = (await match.render.mount(...params)) || null;
+      if (match.render.mount) {
+        const done = (await match.render.mount(...params)) || null;
+        // the user navigated away while this screen was mounting: undo it, keep the newer cleanup
+        if (token !== renderToken) { if (done) try { done(); } catch { /* ignore */ } return; }
+        cleanup = done;
+      }
       Motion.reveal(view);
       window.scrollTo(0, 0);
       document.title = path === "/home" ? "Reforge | Notes into study tools" : `${view.querySelector("h1")?.textContent?.trim() || "Reforge"} | Reforge`;

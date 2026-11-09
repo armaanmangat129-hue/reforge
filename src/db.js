@@ -8,12 +8,14 @@
    tasks    { id, examId, subjectId, day, kind, label, link, done }
    pages    { id, subjectId, order, title, part, keyIdeas[], diagram, diagramSvg, terms[], example, examTip,
               extras, missing[], sourceNoteIds[], status, updatedAt }   (reference book)
+   mastery  { id, subjectId, noteIds[], title, stage, concepts[], diagnostic, lessons, check, beyond,
+              createdAt, updatedAt }   (Master Mode sessions; see master.js)
    meta     { key, value }   (progress, settings)
    cache    { key, value, at } (AI responses) */
 
 const DB = (() => {
   const NAME = "reforge";
-  const VERSION = 3;
+  const VERSION = 4;
   let dbPromise;
 
   function open() {
@@ -37,9 +39,20 @@ const DB = (() => {
         make("meta", "key");
         make("cache", "key");
         make("pages", "id", ["subjectId"]);
+        make("mastery", "id", ["subjectId"]);
       };
-      req.onsuccess = () => resolve(req.result);
+      req.onsuccess = () => {
+        const db = req.result;
+        // another tab is upgrading the database: let go so it isn't blocked
+        db.onversionchange = () => {
+          db.close();
+          dbPromise = null;
+          R.toast("Reforge was updated in another tab. Reload this page to keep going.");
+        };
+        resolve(db);
+      };
       req.onerror = () => reject(req.error);
+      req.onblocked = () => R.toast("Close other Reforge tabs to finish updating, then reload.");
     });
     return dbPromise;
   }
@@ -120,7 +133,7 @@ const DB = (() => {
     async deleteSubject(id) {
       const exams = await all("exams", "subjectId", id);
       for (const e of exams) await deleteWhere(["tasks"], "examId", e.id);
-      await deleteWhere(["notes", "cards", "attempts", "exams", "pages"], "subjectId", id);
+      await deleteWhere(["notes", "cards", "attempts", "exams", "pages", "mastery"], "subjectId", id);
       await del("chats", id);
       await del("subjects", id);
     },
@@ -136,6 +149,13 @@ const DB = (() => {
     },
     async deleteNote(id) {
       await deleteWhere(["cards"], "noteId", id);
+      // Master Mode sessions built on this note: drop the note, and the session if nothing is left
+      for (const m of await all("mastery")) {
+        if (!(m.noteIds || []).includes(id)) continue;
+        const rest = m.noteIds.filter((n) => n !== id);
+        if (rest.length) await put("mastery", { ...m, noteIds: rest });
+        else await del("mastery", m.id);
+      }
       await del("notes", id);
     },
     async countNotesBySubject() {
@@ -158,13 +178,13 @@ const DB = (() => {
     setMeta: (key, value) => put("meta", { key, value }),
 
     async exportAll() {
-      const names = ["subjects", "notes", "cards", "attempts", "chats", "exams", "tasks", "meta", "pages"];
+      const names = ["subjects", "notes", "cards", "attempts", "chats", "exams", "tasks", "meta", "pages", "mastery"];
       const out = { app: "reforge", version: VERSION, exportedAt: new Date().toISOString() };
       for (const n of names) out[n] = await all(n);
       return out;
     },
     async importAll(data) {
-      const names = ["subjects", "notes", "cards", "attempts", "chats", "exams", "tasks", "meta", "pages"];
+      const names = ["subjects", "notes", "cards", "attempts", "chats", "exams", "tasks", "meta", "pages", "mastery"];
       const db = await open();
       const tx = db.transaction(names, "readwrite");
       names.forEach((n) => (Array.isArray(data[n]) ? data[n] : []).forEach((row) => tx.objectStore(n).put(row)));

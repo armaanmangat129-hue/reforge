@@ -56,11 +56,11 @@ const Library = (() => {
     );
   }
 
-  function noteSheet(subject) {
+  function noteSheet(subject, { master = false } = {}) {
     return openSheet(
       `<div class="sheet-body">
-        <h2 id="sheet-title">Add notes</h2>
-        <p>Paste your ${esc(subject.name)} notes, or upload a PDF, Word file or photos. Check the text, then generate.</p>
+        <h2 id="sheet-title">${master ? "Notes to master" : "Add notes"}</h2>
+        <p>Paste your ${esc(subject.name)} notes, or upload a PDF, Word file or photos. Check the text, then ${master ? "start Master Mode" : "generate"}.</p>
         <div class="field">
           <label class="label" for="note-title">Title</label>
           <input class="input" id="note-title" name="title" required maxlength="120" autocomplete="off" placeholder="e.g. Quadratic functions">
@@ -73,20 +73,22 @@ const Library = (() => {
               <input type="file" multiple accept="${Upload.ACCEPT}" class="visually-hidden" data-upload>
             </label>
           </div>
-          <div class="upload-progress" data-upload-progress hidden aria-live="polite">
+          <div class="upload-progress" data-upload-progress hidden>
             <div class="up-head"><span class="up-name"></span><span class="up-pct"></span></div>
             <div class="bar" role="progressbar" aria-label="Upload progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span style="width:0%"></span></div>
             <p class="up-msg"></p>
           </div>
-          <ul class="upload-results" data-upload-results hidden></ul>
+          <ul class="upload-results" data-upload-results role="status" hidden></ul>
           <textarea class="textarea" id="note-text" name="rawText" required placeholder="Paste or type your notes here, or drop files here. Messy is fine."></textarea>
           <span class="hint">PDF, Word (.docx), text, or up to 12 photos (JPG, PNG, iPhone HEIC) of handwritten notes or textbook pages.</span>
         </div>
       </div>
       <div class="sheet-foot">
         <button class="btn" type="button" data-close>Cancel</button>
-        <button class="btn" value="save">Save only</button>
-        <button class="btn btn-primary" value="generate">${icon("spark")}Save and generate</button>
+        ${master
+          ? `<button class="btn btn-primary" value="master">${icon("target")}Start Master Mode</button>`
+          : `<button class="btn" value="save">Save only</button>
+        <button class="btn btn-primary" value="generate">${icon("spark")}Save and generate</button>`}
       </div>`,
       { wide: true, onOpen: (form) => { form.querySelector("#note-title").focus(); wireUpload(form); } }
     );
@@ -100,6 +102,7 @@ const Library = (() => {
     const bar = box.querySelector(".bar");
     const list = form.querySelector("[data-upload-results]");
     const buttons = form.querySelectorAll(".sheet-foot .btn, .upload-btn");
+    const smooth = () => (matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");
     let busy = false;
 
     function show({ index, total, name, message, percent }) {
@@ -113,18 +116,20 @@ const Library = (() => {
       if (overall != null) {
         bar.querySelector("span").style.width = `${overall}%`;
         bar.setAttribute("aria-valuenow", overall);
-      }
+      } else bar.removeAttribute("aria-valuenow");
     }
 
     async function handle(files) {
-      if (busy || !files.length) return;
+      if (!files.length) return;
+      if (busy) return toast("Wait for the current upload to finish");
       busy = true;
       buttons.forEach((b) => b.classList.add("is-disabled"));
-      form.querySelectorAll(".sheet-foot .btn").forEach((b) => (b.disabled = true));
+      // Save buttons wait for the upload; Cancel stays available
+      form.querySelectorAll(".sheet-foot .btn:not([data-close])").forEach((b) => (b.disabled = true));
       list.hidden = true;
       list.innerHTML = "";
       show({ index: 0, total: 1, name: files[0].name, message: "Starting…", percent: 0 });
-      box.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      box.scrollIntoView({ block: "nearest", behavior: smooth() });
       try {
         const { results, errors } = await Upload.extract(files, show);
         if (results.length) {
@@ -148,7 +153,7 @@ const Library = (() => {
         buttons.forEach((b) => b.classList.remove("is-disabled"));
         form.querySelectorAll(".sheet-foot .btn").forEach((b) => (b.disabled = false));
         input.value = "";
-        list.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        list.scrollIntoView({ block: "nearest", behavior: smooth() });
       }
     }
 
@@ -353,6 +358,8 @@ const Library = (() => {
 
   /* ---------- Note ---------- */
 
+  const moreRunning = new Set(); // notes with a "Generate more" request in flight
+
   function startGenerate(noteId, only, fresh = false) {
     AI.generate(noteId, only, { fresh })
       .then((note) => {
@@ -450,11 +457,11 @@ const Library = (() => {
         if (!cards.length && !out.flashcards) return pending();
         return `<div class="tab-actions">
             <a class="btn btn-primary" href="#/review/note/${encodeURIComponent(note.id)}">${icon("study")}Study these cards</a>
-            <button class="btn" type="button" data-action="more-cards">${icon("spark")}Generate more</button>
+            <button class="btn" type="button" data-action="more-cards" ${moreRunning.has(note.id) ? "disabled" : ""}>${icon("spark")}${moreRunning.has(note.id) ? "Writing cards…" : "Generate more"}</button>
             <button class="btn btn-quiet" type="button" data-action="add-card">${icon("plus")}Add a card</button>
           </div>
           <p class="hint card-count">${plural(cards.length, "card")} · ${cards.filter((c) => c.due <= R.endOfToday()).length} due today</p>
-          <p class="status-line" data-more-status hidden></p>
+          <p class="status-line" data-more-status role="status" hidden></p>
           <ul class="card-list">${cards
             .map(
               (c) => `<li class="card flash-row">
@@ -521,6 +528,13 @@ const Library = (() => {
           <a class="btn" href="#/book/${encodeURIComponent(subject.id)}">Open book</a>
           <button class="btn btn-primary" type="button" data-action="make-pages">${icon("layers")}Make reference pages</button>
         </div>
+      </section>
+      <section class="card ref-card master-card">
+        <div>
+          <h2>Master Mode</h2>
+          <p>Find your level on each concept, fill the gaps from the basics up, then prove you've mastered these notes.</p>
+        </div>
+        <div class="head-actions"><button class="btn btn-primary" type="button" data-action="master" data-master-label>${icon("target")}Master this note</button></div>
       </section>
       <div class="tabs" role="tablist" aria-label="Study set" id="note-tabs"></div>
       <div id="tab-slot" role="tabpanel"></div>`;
@@ -623,6 +637,8 @@ const Library = (() => {
           status.dataset.tone = tone;
           status.innerHTML = `${tone === "ok" ? icon("check") : tone === "error" ? icon("alert") : '<span class="spinner" aria-hidden="true"></span>'}<span>${esc(msg)}</span>`;
         };
+        if (moreRunning.has(id)) return;
+        moreRunning.add(id);
         more.disabled = true;
         say("busy", "Writing new cards from your notes…");
         try {
@@ -631,7 +647,7 @@ const Library = (() => {
           const st = slot.querySelector("[data-more-status]");
           if (st) {
             st.hidden = false;
-            st.dataset.tone = res.added ? "ok" : "busy";
+            st.dataset.tone = res.added ? "ok" : "info";
             st.innerHTML = `${icon(res.added ? "check" : "alert")}<span>${res.added
               ? `${plural(res.added, "new card")} added${res.parts > 1 ? ` from part ${res.part + 1} of ${res.parts} of your notes` : ""}. They're due now.`
               : res.parts > 1 ? `No new cards in part ${res.part + 1} of ${res.parts}. Press Generate more to try the next part.` : "Your notes look fully covered. Add more notes to get more cards."}</span>`;
@@ -639,7 +655,10 @@ const Library = (() => {
           if (res.added) toast(`+${plural(res.added, "card")}`);
         } catch (err) {
           say("error", err.message || "Couldn't make more cards. Try again.");
-          more.disabled = false;
+        } finally {
+          moreRunning.delete(id);
+          const b = slot.querySelector('[data-action="more-cards"]');
+          if (b) { b.disabled = false; b.innerHTML = `${icon("spark")}Generate more`; }
         }
         return;
       }
@@ -665,6 +684,18 @@ const Library = (() => {
         toast("Card deleted");
         drawTab();
       }
+    });
+
+    // Master Mode: continue an existing session for this note, or start one
+    const masterBtn = view.querySelector('[data-action="master"]');
+    Master.sessionsFor(note.subjectId).then((list) => {
+      const mine = list.find((x) => x.noteIds.length === 1 && x.noteIds[0] === id);
+      if (mine && mine.diagnostic?.done) masterBtn.innerHTML = `${icon("target")}Continue (${Master.overall(mine)}% mastered)`;
+    });
+    masterBtn.addEventListener("click", async () => {
+      await flushSave();
+      if (!(note.rawText || "").trim()) return toast("Add some notes first");
+      Master.start([id]);
     });
 
     view.querySelector('[data-action="make-pages"]').addEventListener("click", async (e) => {
@@ -715,5 +746,5 @@ const Library = (() => {
   R.route(/^\/subject\/([^/]+)$/, "library", renderSubject);
   R.route(/^\/note\/([^/]+)$/, "library", renderNote);
 
-  return {};
+  return { noteSheet };
 })();

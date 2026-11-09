@@ -68,6 +68,12 @@ const Study = (() => {
         ${totalDue ? `<a class="btn btn-primary btn-gold" href="#/review/all">${icon("study")}Start review</a>` : ""}
       </section>
 
+      <a class="card master-promo reveal" href="#/master">
+        <span class="mp-icon">${icon("target")}</span>
+        <div><h2>Master Mode</h2><p>Advanced notes? Find your level, fill the gaps from the basics, then prove mastery.</p></div>
+        ${icon("arrow", "icon arrow")}
+      </a>
+
       <div class="section-head section"><h2>By subject</h2></div>
       <ul class="subject-study-list">
         ${subjectsWithNotes
@@ -159,7 +165,8 @@ const Study = (() => {
         (r) => `<button class="btn rating rating-${r.id}" type="button" data-rate="${r.q}">
           <strong>${r.label}</strong><span>${practice ? "&nbsp;" : SRS.previewInterval(current, r.q)}</span><kbd>${r.key}</kbd></button>`
       ).join("")}</div>`;
-      slot.querySelector("[data-rate]").focus({ preventScroll: true });
+      // focus Good, so a habitual Enter after flipping doesn't mark the card wrong
+      slot.querySelector('[data-rate="4"]')?.focus({ preventScroll: true });
     }
 
     async function rate(q) {
@@ -238,9 +245,11 @@ const Study = (() => {
     }
 
     const onKey = (e) => {
-      if (e.target.closest?.("input, textarea, select, dialog")) return;
+      if (e.target.closest?.("input, textarea, select, dialog") || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+      // Space/Enter on a link or button (nav, Edit card, a rating) does its own thing
+      const onControl = e.target.closest?.("a, button") && !e.target.closest(".flashcard");
       if (e.key === " " || e.key === "Enter") {
-        if (!flipped) { e.preventDefault(); flip(); }
+        if (!flipped && !onControl) { e.preventDefault(); flip(); }
       } else if (["1", "2", "3"].includes(e.key)) {
         rate(SRS.RATINGS[Number(e.key) - 1].q);
       } else if (e.key.toLowerCase() === "e" && current) {
